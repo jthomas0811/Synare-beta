@@ -1,0 +1,570 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><title>Synare Touch</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one full-screen pad (the drum head); logo above, live readout below; nothing to adjust, only to play */
+:root {
+  --ground: #0d0c0b;     /* the unit's black, warmed */
+  --head: #161412;       /* the pad surface */
+  --ring: #2a2622;       /* pad rings, grid */
+  --ink: #e9e3d9;        /* panel lettering */
+  --dim: #8a837a;        /* secondary text */
+  --lamp: #ff7319;       /* the Synare lamp orange */
+  --display: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--ground); color: var(--ink); font-family: var(--display); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.app { height: 100%; display: flex; flex-direction: column; gap: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px; box-sizing: border-box; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+header img { height: 22px; width: auto; display: block; }
+header .tag { font: 500 12px var(--mono); letter-spacing: 0.14em; color: var(--dim); text-transform: uppercase; }
+#pad { flex: 1; min-height: 0; width: 100%; display: block; border-radius: 18px; background: var(--head); touch-action: none; }
+footer { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; font: 400 11px var(--mono); color: var(--dim); }
+footer b { display: block; font: 500 15px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; margin-top: 2px; }
+footer .meter { height: 3px; background: var(--ring); border-radius: 2px; margin-top: 6px; position: relative; overflow: hidden; }
+footer .meter i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--lamp); border-radius: 2px; }
+#note { font: 400 11px var(--mono); color: var(--dim); text-align: center; min-height: 14px; }
+#start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--ground) 92%, transparent); z-index: 5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+#start .card { max-width: 340px; display: flex; flex-direction: column; align-items: center; gap: 22px; text-align: center; }
+#go { width: 168px; height: 168px; border-radius: 50%; border: 1px solid var(--ring); cursor: pointer;
+  background: radial-gradient(circle at 50% 42%, #24201c 0%, #141210 62%, #0b0a09 100%); color: var(--ink);
+  font: 700 20px var(--display); letter-spacing: 0.16em; text-transform: uppercase; box-shadow: 0 0 0 10px #12100e, 0 0 0 11px var(--ring); }
+#go:focus-visible { outline: 2px solid var(--lamp); outline-offset: 14px; }
+#go span { color: var(--lamp); }
+.how { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font: 400 13px var(--mono); color: var(--dim); text-align: left; }
+.how dt { color: var(--ink); font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; }
+.how dd { margin: 0; }
+#err { color: var(--lamp); font: 400 12px var(--mono); }
+</style>
+
+<div class="app">
+  <header>
+    <img id="logo" alt="Synare" src="data:image/png;base64,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">
+    <span class="tag">Touch · one pad</span>
+  </header>
+  <canvas id="pad" aria-label="Synare pad: tap to strike, slide sideways for pitch, drag up or down for decay, second finger for wobble"></canvas>
+  <div id="note"></div>
+  <footer>
+    <div>PITCH<b id="rPitch">150 Hz</b><div class="meter"><i id="mPitch"></i></div></div>
+    <div>DECAY<b id="rDecay">0.40 s</b><div class="meter"><i id="mDecay"></i></div></div>
+    <div>WOBBLE<b id="rWob">off</b><div class="meter"><i id="mWob"></i></div></div>
+  </footer>
+</div>
+
+<div id="start">
+  <div class="card">
+    <button id="go" type="button">Tap to <span>start</span></button>
+    <dl class="how">
+      <dt>Tap</dt><dd>strike. Higher on the pad hits harder.</dd>
+      <dt>Slide</dt><dd>left and right while holding: pitch.</dd>
+      <dt>Drag</dt><dd>up while holding: longer decay. Down: shorter.</dd>
+      <dt>2nd finger</dt><dd>SLO wobble. Further from the first finger, deeper.</dd>
+    </dl>
+    <div id="err" hidden></div>
+  </div>
+</div>
+
+<script>
+// ---------- engine: the Synare v18 gen~ code (synare_v15.genexpr), transpiled sample for sample ----------
+const EP = {"tune_hz": 135, "sweep_hz": 1150, "res_amt": 1, "fdec_s": 0.17, "adec_s": 0.21, "o2mod_hz": 0, "o1_hz": 200, "o1_mode": 0, "o2_hz": 100, "o2_mode": 0, "vol_amp": 0.5, "sens_amt": 0.5, "snap_n": 0, "key_on": 0, "key_hz": 130.8128, "nl_k": 14.7, "nl_b": 0.2, "lp_hz": 6000, "cft": 0.22, "nrm": 2.85, "test_vca": 0, "pscale": 0, "sh_d": 0.7, "sh_b": 0.3, "trk_drive": 0, "trk_char": 83, "trk_odd": 0.3, "trk_shelf": 3, "trk_kp": 8, "trk_kn": 8, "trk_lim": 6, "trk_rel": 0.03, "jit_f": 0.02, "jit_s": 0.3, "lock_on": 1, "lock_th": 0.3, "lock_fd": 0.0005}, EH = {"t_h": 10, "vel_h": 0, "cf_h": 0, "ca_h": 0, "cx_h": 0, "s1_h": 0, "s2_h": 0, "s3_h": 0, "s4_h": 0, "c1_h": 0.5, "q1_h": 1, "c2_h": 0.5, "q2_h": 1, "hpx_h": 0, "hpy_h": 0, "sm_tune": 135, "sm_sweep": 1150, "sm_mod": 0, "sm_res": 1, "g1_h": 0, "gn_h": 0, "g2_h": 0, "snap_h": 0, "dcx_h": 0, "dcy_h": 0, "lp_h": 0, "jf_h": 0, "js_h": 0, "sh_h": 0, "ao_h": 0, "fx_h": 0, "fy_h": 0, "le_h": 0, "b1_h": 0, "b2_h": 0, "b3_h": 0, "b4_h": 0, "c1b_h": 0.5, "q1b_h": 1, "c2b_h": 0.5, "q2b_h": 1, "r1_h": 0, "r2_h": 0, "r3_h": 0, "r4_h": 0, "ry_h": 0, "z1_h": 0, "z2_h": 0, "z3_h": 0, "z4_h": 0, "act_h": 0, "fd_h": 1};
+const BASE = { res_amt: 1.0, sweep_hz: 2000.0, tune_hz: 150.0, fdec_s: 0.4, adec_s: 0.745, o1_mode: 0.0, o2_mode: 2.0, o2_hz: 100.0,
+  o2mod_hz: 0.0, sens_amt: 0.5, vol_amp: 1.0, key_on: 0.0, trk_lim: 6.0, trk_char: 83.0, lock_on: 1.0 };
+function synTick(P, H, IN, SR, CL, NZ) { let OUT;
+let tt,vv,cf,ca,cx,s1,s2,s3,s4,c1,q1,c2,q2,hpx,hpy,isr,ksm,ksw,tn,sw,md,rs,w1,wn,w2,g1,gn,g2,kon,tnorm,koct,kbase,fdec_e,o1_e,o2_e,kn1,st1,iv1,kn2,st2,iv2,s1b,s2b,s3b,s4b,c1b,q1b,c2b,q2b,act,fd,vq,tp,pls,oa,ofl,katt,tgf,tga,ef,ea,ex,lnr,rc1,f2,rc2,k1,c1p,rr1,k2,c2p,rr2,c1bp,rb1,c2bp,rb2,sq1b,sq2b,trib,sq1,sq2,tri,jf,js,fpre,kvib,kvibb,fjit,fc,fcb,frest,fcr,nz1,nz2,kk,gg,gq,bq,xin,sumS,uu,v1,y1,v2,y2,v3,y3,v4,y4a,ggb,gqb,bqb,xinb,sumB,ub,w1b,y1b,w2b,y2b,w3b,y3b,w4b,y4b,ggr,gqr,bqr,sr1,sr2,sr3,sr4,sumR,ur,w1r,y1r,w2r,y2r,w3r,y3r,w4r,y4r,y4,vca,yn0,yq,yn,kdc,dcy,sig,ao,dof,sb,cl,klp,lpv,khp,hp,dwet,ksh,shl,shg,tu,cwet,lin,le,lg,todd,dout,cn,tcl,trkv,kfin,fy,outv;
+tt = H.t_h;
+vv = H.vel_h;
+cf = H.cf_h;
+ca = H.ca_h;
+cx = H.cx_h;
+s1 = H.s1_h;
+s2 = H.s2_h;
+s3 = H.s3_h;
+s4 = H.s4_h;
+c1 = H.c1_h;
+q1 = H.q1_h;
+c2 = H.c2_h;
+q2 = H.q2_h;
+hpx = H.hpx_h;
+hpy = H.hpy_h;
+isr = 1.0 / SR;
+ksm = 1.0 - Math.exp(-isr / 0.02);
+ksw = 1.0 - Math.exp(-isr / 0.005);
+if (P.snap_n != H.snap_h) { ksm = 1.0; }
+tn = H.sm_tune + (P.tune_hz - H.sm_tune) * ksm;
+sw = H.sm_sweep + (P.sweep_hz - H.sm_sweep) * ksm;
+md = H.sm_mod + (P.o2mod_hz - H.sm_mod) * ksm;
+rs = H.sm_res + (P.res_amt - H.sm_res) * ksm;
+w1 = 0.0;
+wn = 0.0;
+w2 = 0.0;
+if (P.o1_mode > 0.5 && P.o1_mode < 1.5) { w1 = 1.0; }
+if (P.o1_mode > 1.5) { wn = 1.0; }
+if (P.o2_mode > 0.5 && P.o2_mode < 1.5) { w2 = 1.0; }
+g1 = H.g1_h + (w1 - H.g1_h) * ksw;
+gn = H.gn_h + (wn - H.gn_h) * ksw;
+g2 = H.g2_h + (w2 - H.g2_h) * ksw;
+kon = 0.0;
+if (P.key_on > 0.5) { kon = 1.0; }
+tnorm = Math.pow(CL((P.tune_hz - 15.0) / 3985.0, 0.0, 1.0), 1.0 / 3.0);
+koct = 0.0;
+if (tnorm < 0.3109) { koct = Math.floor((tnorm - 0.3109) / 0.3109 * 2.0 + 0.5); }
+else { koct = Math.floor((tnorm - 0.3109) / 0.6891 * 2.0 + 0.5); }
+kbase = CL(P.key_hz * Math.pow(2.0, CL(koct, -2.0, 2.0)), 15.0, 4000.0);
+fdec_e = P.fdec_s;
+if (kon > 0.5) { fdec_e = 0.005 + (P.fdec_s - 0.005) * 0.145; }
+o1_e = P.o1_hz;
+o2_e = P.o2_hz;
+if (kon > 0.5) {
+	kn1 = 1.0 - Math.sqrt(Math.max((33000.0 / Math.max(P.o1_hz, 1.0) - 22.0) / 1000.0, 0.0));
+	st1 = Math.floor(CL(kn1, 0.0, 1.0) * 6.0 + 0.5);
+	iv1 = -24.0;
+	if (st1 > 0.5) { iv1 = -12.0; }
+	if (st1 > 1.5) { iv1 = -5.0; }
+	if (st1 > 2.5) { iv1 = 0.0; }
+	if (st1 > 3.5) { iv1 = 7.0; }
+	if (st1 > 4.5) { iv1 = 12.0; }
+	if (st1 > 5.5) { iv1 = 24.0; }
+	o1_e = P.key_hz * Math.pow(2.0, iv1 / 12.0);
+	if (P.o2_mode < 1.5) {
+		kn2 = 1.0 - Math.sqrt(Math.max((33000.0 / Math.max(P.o2_hz, 1.0) - 22.0) / 1000.0, 0.0));
+		st2 = Math.floor(CL(kn2, 0.0, 1.0) * 6.0 + 0.5);
+		iv2 = -24.0;
+		if (st2 > 0.5) { iv2 = -12.0; }
+		if (st2 > 1.5) { iv2 = -5.0; }
+		if (st2 > 2.5) { iv2 = 0.0; }
+		if (st2 > 3.5) { iv2 = 7.0; }
+		if (st2 > 4.5) { iv2 = 12.0; }
+		if (st2 > 5.5) { iv2 = 24.0; }
+		o2_e = P.key_hz * Math.pow(2.0, iv2 / 12.0);
+	}
+}
+s1b = H.b1_h;
+s2b = H.b2_h;
+s3b = H.b3_h;
+s4b = H.b4_h;
+c1b = H.c1b_h;
+q1b = H.q1b_h;
+c2b = H.c2b_h;
+q2b = H.q2b_h;
+act = H.act_h;
+fd = Math.min(H.fd_h + isr / Math.max(P.lock_fd, 0.0002), 1.0);
+if (IN > 0.0) {
+	tt = 0.0;
+	vv = Math.min(IN * (0.3 + 1.7 * P.sens_amt), 1.0);
+	vq = 0.9 * (Math.max(ca - 0.045, 0.0) + 1.431 * Math.max(cx - 0.045, 0.0));
+	if (P.lock_on > 0.5 && vq < P.lock_th) {
+		act = 1.0 - act;
+		fd = 0.0;
+		if (vq < 0.002) { fd = 1.0; }
+		if (act > 0.5) {
+			q1b = 1.0;
+			c1b = 0.4;
+			q2b = 1.0;
+			c2b = 0.5;
+			s1b = H.z1_h;
+			s2b = H.z2_h;
+			s3b = H.z3_h;
+			s4b = H.z4_h;
+		}
+		else {
+			q1 = 1.0;
+			c1 = 0.4;
+			q2 = 1.0;
+			c2 = 0.5;
+			s1 = H.z1_h;
+			s2 = H.z2_h;
+			s3 = H.z3_h;
+			s4 = H.z4_h;
+		}
+	}
+}
+if (P.lock_on < 0.5) {
+	act = 0.0;
+	fd = 1.0;
+}
+tt = tt + isr;
+tp = 0.0338;
+pls = 0.0;
+if (tt < tp) { pls = vv * Math.sin(3.14159265 * tt / tp); }
+oa = 0.045;
+ofl = 0.0604;
+katt = 1.0 - Math.exp(-isr / 0.001);
+tgf = pls * (1.0 + ofl);
+tga = pls * (1.0 + oa);
+if (tgf > cf) { cf = cf + (tgf - cf) * katt; } else { cf = cf * Math.exp(-isr / Math.max(fdec_e, 0.005)); }
+if (tga > ca) { ca = ca + (tga - ca) * katt; } else { ca = ca * Math.exp(-isr / Math.max(P.adec_s, 0.005)); }
+if (tga > cx) { cx = cx + (tga - cx) * katt; } else { cx = cx * Math.exp(-isr / 0.0234); }
+ef = Math.max(cf - ofl, 0.0);
+ea = Math.max(ca - oa, 0.0);
+ex = Math.max(cx - oa, 0.0);
+lnr = 0.405465;
+rc1 = 1.0 / (2.0 * lnr * Math.max(o1_e, 1.0));
+f2 = Math.max(o2_e, 1.0);
+if (P.o2_mode > 1.5) { f2 = f2 / 20.0; }
+rc2 = 1.0 / (2.0 * lnr * f2);
+k1 = 1.0 - Math.exp(-isr / rc1);
+c1p = c1;
+c1 = c1 + (q1 - c1) * k1;
+if (q1 > 0.5 && c1 > 0.6) { rr1 = isr - rc1 * Math.log((1.0 - c1p) / 0.4); q1 = 0.0; c1 = 0.6 * Math.exp(-Math.max(rr1, 0.0) / rc1); }
+else if (q1 < 0.5 && c1 < 0.4) { rr1 = isr - rc1 * Math.log(c1p / 0.4); q1 = 1.0; c1 = 1.0 - 0.6 * Math.exp(-Math.max(rr1, 0.0) / rc1); }
+k2 = 1.0 - Math.exp(-isr / rc2);
+c2p = c2;
+c2 = c2 + (q2 - c2) * k2;
+if (q2 > 0.5 && c2 > 0.6) { rr2 = isr - rc2 * Math.log((1.0 - c2p) / 0.4); q2 = 0.0; c2 = 0.6 * Math.exp(-Math.max(rr2, 0.0) / rc2); }
+else if (q2 < 0.5 && c2 < 0.4) { rr2 = isr - rc2 * Math.log(c2p / 0.4); q2 = 1.0; c2 = 1.0 - 0.6 * Math.exp(-Math.max(rr2, 0.0) / rc2); }
+c1bp = c1b;
+c1b = c1b + (q1b - c1b) * k1;
+if (q1b > 0.5 && c1b > 0.6) { rb1 = isr - rc1 * Math.log((1.0 - c1bp) / 0.4); q1b = 0.0; c1b = 0.6 * Math.exp(-Math.max(rb1, 0.0) / rc1); }
+else if (q1b < 0.5 && c1b < 0.4) { rb1 = isr - rc1 * Math.log(c1bp / 0.4); q1b = 1.0; c1b = 1.0 - 0.6 * Math.exp(-Math.max(rb1, 0.0) / rc1); }
+c2bp = c2b;
+c2b = c2b + (q2b - c2b) * k2;
+if (q2b > 0.5 && c2b > 0.6) { rb2 = isr - rc2 * Math.log((1.0 - c2bp) / 0.4); q2b = 0.0; c2b = 0.6 * Math.exp(-Math.max(rb2, 0.0) / rc2); }
+else if (q2b < 0.5 && c2b < 0.4) { rb2 = isr - rc2 * Math.log(c2bp / 0.4); q2b = 1.0; c2b = 1.0 - 0.6 * Math.exp(-Math.max(rb2, 0.0) / rc2); }
+sq1b = q1b * 2.0 - 1.0;
+sq2b = q2b * 2.0 - 1.0;
+trib = (c2b - 0.5) * 10.0;
+sq1 = q1 * 2.0 - 1.0;
+sq2 = q2 * 2.0 - 1.0;
+tri = (c2 - 0.5) * 10.0;
+jf = H.jf_h + (NZ() - H.jf_h) * (1.0 - Math.exp(-6.28318531 * 300.0 * isr));
+js = H.js_h + (NZ() - H.js_h) * (1.0 - Math.exp(-6.28318531 * 4.0 * isr));
+fpre = tn + sw * ef;
+if (kon > 0.5) { fpre = kbase * (1.0 + (sw / 3000.0) * ef); }
+kvib = 1.0;
+kvibb = 1.0;
+if (kon > 0.5) {
+	kvib = Math.pow(2.0, tri * md * 0.02 / 1200.0);
+	kvibb = Math.pow(2.0, trib * md * 0.02 / 1200.0);
+}
+fjit = (1.0 + P.jit_f * jf + P.jit_s * js) * (1.0034 + 0.007 * rs - 0.0042 * Math.pow(CL((1.0 - rs) / 0.65, 0.0, 1.0), 4.0));
+fc = CL((fpre * kvib + md * tri * (1.0 - kon)) * fjit, 15.0, 0.4 * SR);
+fcb = CL((fpre * kvibb + md * trib * (1.0 - kon)) * fjit, 15.0, 0.4 * SR);
+frest = tn;
+if (kon > 0.5) { frest = kbase; }
+fcr = CL(frest * fjit, 15.0, 0.4 * SR);
+nz1 = NZ();
+nz2 = NZ();
+kk = P.nl_k * CL(rs, 0.0, 1.0);
+gg = Math.tan(3.14159265 * fc * isr);
+gq = gg / (1.0 + gg);
+bq = 1.0 / (1.0 + gg);
+xin = 0.16 * (g1 * sq1 + gn * nz1 + g2 * sq2) + 0.00001 * nz2;
+sumS = gq * gq * gq * bq * s1 + gq * gq * bq * s2 + gq * bq * s3 + bq * s4;
+uu = Math.tanh((xin - kk * sumS) / (1.0 + kk * gq * gq * gq * gq) + P.nl_b) - Math.tanh(P.nl_b);
+v1 = (uu - s1) * gq;
+y1 = v1 + s1;
+s1 = y1 + v1;
+v2 = (y1 - s2) * gq;
+y2 = v2 + s2;
+s2 = y2 + v2;
+v3 = (y2 - s3) * gq;
+y3 = v3 + s3;
+s3 = y3 + v3;
+v4 = (y3 - s4) * gq;
+y4a = v4 + s4;
+s4 = y4a + v4;
+ggb = Math.tan(3.14159265 * fcb * isr);
+gqb = ggb / (1.0 + ggb);
+bqb = 1.0 / (1.0 + ggb);
+xinb = 0.16 * (g1 * sq1b + gn * nz1 + g2 * sq2b) + 0.00001 * nz2;
+sumB = gqb * gqb * gqb * bqb * s1b + gqb * gqb * bqb * s2b + gqb * bqb * s3b + bqb * s4b;
+ub = Math.tanh((xinb - kk * sumB) / (1.0 + kk * gqb * gqb * gqb * gqb) + P.nl_b) - Math.tanh(P.nl_b);
+w1b = (ub - s1b) * gqb;
+y1b = w1b + s1b;
+s1b = y1b + w1b;
+w2b = (y1b - s2b) * gqb;
+y2b = w2b + s2b;
+s2b = y2b + w2b;
+w3b = (y2b - s3b) * gqb;
+y3b = w3b + s3b;
+s3b = y3b + w3b;
+w4b = (y3b - s4b) * gqb;
+y4b = w4b + s4b;
+s4b = y4b + w4b;
+ggr = Math.tan(3.14159265 * fcr * isr);
+gqr = ggr / (1.0 + ggr);
+bqr = 1.0 / (1.0 + ggr);
+sr1 = H.r1_h;
+sr2 = H.r2_h;
+sr3 = H.r3_h;
+sr4 = H.r4_h;
+sumR = gqr * gqr * gqr * bqr * sr1 + gqr * gqr * bqr * sr2 + gqr * bqr * sr3 + bqr * sr4;
+ur = Math.tanh((0.00001 - kk * sumR) / (1.0 + kk * gqr * gqr * gqr * gqr) + P.nl_b) - Math.tanh(P.nl_b);
+w1r = (ur - sr1) * gqr;
+y1r = w1r + sr1;
+sr1 = y1r + w1r;
+w2r = (y1r - sr2) * gqr;
+y2r = w2r + sr2;
+sr2 = y2r + w2r;
+w3r = (y2r - sr3) * gqr;
+y3r = w3r + sr3;
+sr3 = y3r + w3r;
+w4r = (y3r - sr4) * gqr;
+y4r = w4r + sr4;
+sr4 = y4r + w4r;
+if (H.ry_h < 0.0 && y4r >= 0.0) {
+	H.z1_h = sr1;
+	H.z2_h = sr2;
+	H.z3_h = sr3;
+	H.z4_h = sr4;
+}
+H.r1_h = sr1;
+H.r2_h = sr2;
+H.r3_h = sr3;
+H.r4_h = sr4;
+H.ry_h = y4r;
+y4 = y4a;
+if (act > 0.5) { y4 = y4b * fd + y4a * (1.0 - fd); }
+else { y4 = y4a * fd + y4b * (1.0 - fd); }
+H.b1_h = s1b;
+H.b2_h = s2b;
+H.b3_h = s3b;
+H.b4_h = s4b;
+H.c1b_h = c1b;
+H.q1b_h = q1b;
+H.c2b_h = c2b;
+H.q2b_h = q2b;
+H.act_h = act;
+H.fd_h = fd;
+vca = 0.9 * (ea + 1.431 * ex) + P.test_vca;
+yn0 = y4 * P.nrm;
+yq = yn0 * yn0;
+yn = yn0 + P.pscale * (0.09 * yq + 0.08 * yq * yn0 + 0.025 * yq * yq + 0.016 * yq * yq * yn0);
+yn = (Math.tanh(P.sh_d * (yn + P.sh_b)) - Math.tanh(P.sh_d * P.sh_b)) / Math.tanh(P.sh_d);
+kdc = Math.exp(-6.28318531 * 5.0 * isr);
+dcy = kdc * (H.dcy_h + yn - H.dcx_h);
+sig = dcy * vca;
+ao = H.ao_h + (Math.abs(dcy) - H.ao_h) * (1.0 - Math.exp(-isr / 0.01));
+dof = P.cft * vca * Math.min(ao / 0.6, 1.0);
+sb = sig + dof;
+cl = sb / Math.pow(1.0 + Math.pow(Math.abs(sb), 10.0), 0.1);
+klp = 1.0 - Math.exp(-6.28318531 * P.lp_hz * isr);
+lpv = H.lp_h + (cl - H.lp_h) * klp;
+khp = Math.exp(-6.28318531 * 5.0 * isr);
+hp = khp * (hpy + lpv - hpx);
+dwet = CL(P.trk_lim / 2.0, 0.0, 1.0);
+ksh = 1.0 - Math.exp(-6.28318531 * 1500.0 * isr);
+shl = H.sh_h + (hp - H.sh_h) * ksh;
+shg = Math.pow(10.0, P.trk_shelf / 20.0);
+tu = (shl + (hp - shl) * shg) * Math.pow(10.0, (P.trk_drive + P.trk_lim) / 20.0);
+cwet = CL(P.trk_char / 10.0, 0.0, 1.0);
+lin = Math.max(tu, -tu * (1.0 - cwet));
+le = H.le_h * Math.exp(-isr / Math.max(P.trk_rel, 0.005));
+if (lin > le) { le = lin; }
+lg = 1.0;
+if (le > 1.0) { lg = 1.0 / le; }
+tu = tu * lg;
+todd = Math.tanh(P.trk_odd * tu) / Math.max(P.trk_odd, 0.001);
+dout = hp + (todd - hp) * dwet;
+cn = 1.0 / (1.0 + CL(P.trk_char, 0.0, 100.0) * 0.006);
+tcl = dout / Math.pow(1.0 + Math.pow(Math.abs(dout), P.trk_kp), 1.0 / P.trk_kp);
+if (dout < 0.0) { tcl = -cn * (Math.abs(dout) / cn) / Math.pow(1.0 + Math.pow(Math.abs(dout) / cn, P.trk_kn), 1.0 / P.trk_kn); }
+trkv = dout + (tcl - dout) * cwet;
+kfin = Math.exp(-6.28318531 * 0.5 * isr);
+fy = kfin * (H.fy_h + trkv - H.fx_h);
+outv = fy * P.vol_amp * 0.5;
+OUT = outv;
+OUT = outv;
+H.t_h = tt;
+H.vel_h = vv;
+H.cf_h = cf;
+H.ca_h = ca;
+H.cx_h = cx;
+H.s1_h = s1;
+H.s2_h = s2;
+H.s3_h = s3;
+H.s4_h = s4;
+H.c1_h = c1;
+H.q1_h = q1;
+H.c2_h = c2;
+H.q2_h = q2;
+H.hpx_h = lpv;
+H.dcx_h = yn;
+H.dcy_h = dcy;
+H.lp_h = lpv;
+H.jf_h = jf;
+H.sh_h = shl;
+H.ao_h = ao;
+H.fx_h = trkv;
+H.fy_h = fy;
+H.le_h = le;
+H.js_h = js;
+H.hpy_h = hp;
+H.sm_tune = tn;
+H.snap_h = P.snap_n;
+H.sm_sweep = sw;
+H.sm_mod = md;
+H.sm_res = rs;
+H.g1_h = g1;
+H.gn_h = gn;
+H.g2_h = g2;
+return OUT; }
+
+// worklet source built from the same function text, so main thread and worklet run identical code
+function workletSource() {
+  return `const EP=${JSON.stringify(EP)},EH=${JSON.stringify(EH)},BASE=${JSON.stringify(BASE)};
+${synTick.toString()}
+class Syn extends AudioWorkletProcessor{constructor(){super();this.P=Object.assign({},EP,BASE);this.H=Object.assign({},EH);this.hit=0;this.n=0;this.seed=24680;
+this.port.onmessage=e=>{const d=e.data;if(d.p)Object.assign(this.P,d.p);if(d.hit)this.hit=Math.max(this.hit,d.hit);};}
+process(i,o){const a=o[0][0],b=o[0][1],P=this.P,H=this.H,SR=sampleRate;let s=this.seed;
+const NZ=()=>{s=(s*1664525+1013904223)>>>0;return s/2147483648-1;},CL=(x,lo,hi)=>x<lo?lo:x>hi?hi:x;
+for(let k=0;k<a.length;k++){const IN=this.hit;this.hit=0;let y=synTick(P,H,IN,SR,CL,NZ);a[k]=y>1?1:y<-1?-1:y;}
+if(b)b.set(a);this.seed=s;this.n+=a.length;
+if(this.n>=256){this.n=0;this.port.postMessage({fc:H.sm_tune+H.sm_sweep*Math.max(H.cf_h-0.0604,0)+H.sm_mod*(H.c2_h-0.5)*10,amp:0.9*(Math.max(H.ca_h-0.045,0)+1.431*Math.max(H.cx_h-0.045,0))});}
+return true;}}
+registerProcessor('synare',Syn);`;
+}
+
+// ---------- mappings ----------
+const FMIN = 70, FMAX = 2500;                         // pad width: 70 Hz (left) to 2.5 kHz (right), log
+const xToHz = x => FMIN * Math.pow(FMAX / FMIN, x);
+const hzToX = f => Math.log(Math.max(f, 1) / FMIN) / Math.log(FMAX / FMIN);
+const strike = u => Math.pow(0.31 + 0.69 * u, 2);     // tap height to strike: bottom = lightest blip in the Shaka clip, top = full hit
+const S = { x: hzToX(150), dec: 0, wob: 0 };
+function knobsFromTilt() {
+  const d = S.dec, fk = 63 + (d > 0 ? 27 : 28) * d, ak = 58 + 32 * d;   // Filter Decay 35..90, Amp Decay 26..90 (home 63 / 58)
+  return { fdec_s: 0.005 + Math.pow(fk / 100, 2), adec_s: 0.005 + 2.2 * Math.pow(ak / 100, 2), o2mod_hz: 700 * S.wob };
+}
+
+// ---------- audio ----------
+let ctx = null, node = null, sp = null, mainP = null, mainH = null, pendingHit = 0, wake = null;
+const live = { fc: 150, amp: 0 };
+function send() {
+  const p = Object.assign({ tune_hz: xToHz(S.x) }, knobsFromTilt());
+  if (node) node.port.postMessage({ p }); else if (mainP) Object.assign(mainP, p);
+}
+function hit(v) { if (node) node.port.postMessage({ hit: v }); else pendingHit = Math.max(pendingHit, v); }
+async function startAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC({ latencyHint: 'interactive' }); ctx.resume();
+  try {
+    const url = URL.createObjectURL(new Blob([workletSource()], { type: 'application/javascript' }));
+    await ctx.audioWorklet.addModule(url);
+    node = new AudioWorkletNode(ctx, 'synare', { numberOfInputs: 0, outputChannelCount: [2] });
+    node.port.onmessage = e => { live.fc = e.data.fc; live.amp = e.data.amp; };
+    node.connect(ctx.destination);
+  } catch (e) {                                        // older browsers: same engine on the main thread
+    node = null; mainP = Object.assign({}, EP, BASE); mainH = Object.assign({}, EH);
+    let s = 13579; const NZ = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 2147483648 - 1; }, CL = (x, lo, hi) => x < lo ? lo : x > hi ? hi : x;
+    sp = ctx.createScriptProcessor(1024, 0, 2);
+    sp.onaudioprocess = ev => {
+      const a = ev.outputBuffer.getChannelData(0), b = ev.outputBuffer.getChannelData(1);
+      for (let k = 0; k < a.length; k++) { const IN = pendingHit; pendingHit = 0; const y = synTick(mainP, mainH, IN, ctx.sampleRate, CL, NZ); a[k] = y > 1 ? 1 : y < -1 ? -1 : y; }
+      b.set(a);
+      live.fc = mainH.sm_tune + mainH.sm_sweep * Math.max(mainH.cf_h - 0.0604, 0) + mainH.sm_mod * (mainH.c2_h - 0.5) * 10;
+      live.amp = 0.9 * (Math.max(mainH.ca_h - 0.045, 0) + 1.431 * Math.max(mainH.cx_h - 0.045, 0));
+    };
+    sp.connect(ctx.destination);
+  }
+  send(); await ctx.resume();
+}
+async function keepAwake() { try { if (navigator.wakeLock && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch (e) { wake = null; } }
+document.addEventListener('visibilitychange', () => { if (!document.hidden && ctx) { ctx.resume(); keepAwake(); } });
+
+// desktop testing: arrow keys for decay and wobble
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp') S.dec = Math.min(1, S.dec + 0.1); else if (e.key === 'ArrowDown') S.dec = Math.max(-1, S.dec - 0.1);
+  else if (e.key === 'ArrowRight') S.wob = Math.min(1, S.wob + 0.1); else if (e.key === 'ArrowLeft') S.wob = Math.max(0, S.wob - 0.1); else return;
+  e.preventDefault(); send();
+});
+
+// ---------- the pad ----------
+const pad = document.getElementById('pad'), g = pad.getContext('2d');
+let W = 0, Hh = 0, dpr = 1;
+function size() { dpr = window.devicePixelRatio || 1; W = pad.clientWidth; Hh = pad.clientHeight; pad.width = Math.round(W * dpr); pad.height = Math.round(Hh * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0); }
+window.addEventListener('resize', size);
+// one finger is the stick (strikes, pitch, decay); a second finger held down is the wobble
+let stick = null, wob = null; const ripples = [];   // stick: {id,x,y,y0,d0}; wob: {id,x,y}
+function rel(e) { const r = pad.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+function wobDepth() {
+  if (!wob) return 0; const s = stick || lastStick; if (!s) return 0;
+  const d = Math.hypot((wob.x - s.x) * W, (wob.y - s.y) * Hh) / Math.hypot(W, Hh);
+  return Math.max(0, Math.min(1, (d - 0.06) / 0.5));
+}
+let lastStick = null;
+pad.addEventListener('pointerdown', e => {
+  if (!ctx) return; e.preventDefault(); pad.setPointerCapture(e.pointerId);
+  const [x, y] = rel(e);
+  if (stick && !wob) { wob = { id: e.pointerId, x, y }; S.wob = wobDepth(); send(); return; }
+  if (stick) return;
+  stick = { id: e.pointerId, x, y, y0: y, d0: S.dec }; lastStick = stick;
+  S.x = Math.max(0, Math.min(1, x)); send(); hit(strike(Math.max(0, Math.min(1, 1 - y))));
+  ripples.push({ x: x * W, y: y * Hh, t: performance.now(), u: Math.max(0, Math.min(1, 1 - y)) });
+});
+pad.addEventListener('pointermove', e => {
+  const [x, y] = rel(e);
+  if (stick && e.pointerId === stick.id) {
+    stick.x = x; stick.y = y; S.x = Math.max(0, Math.min(1, x));
+    S.dec = Math.max(-1, Math.min(1, stick.d0 + (stick.y0 - y) / 0.35));   // a third of the pad's height covers the decay range
+  } else if (wob && e.pointerId === wob.id) { wob.x = x; wob.y = y; } else return;
+  S.wob = wobDepth(); send();
+});
+function lift(e) {
+  if (stick && e.pointerId === stick.id) { lastStick = { x: stick.x, y: stick.y }; stick = null; }
+  else if (wob && e.pointerId === wob.id) { wob = null; S.wob = 0; send(); }
+}
+pad.addEventListener('pointerup', lift); pad.addEventListener('pointercancel', lift);
+
+const trail = [];                                      // pitch history: newest at the top, falling down the pad
+const GRID = [100, 200, 500, 1000, 2000];
+function draw(now) {
+  g.clearRect(0, 0, W, Hh);
+  const cx = W / 2, cy = Hh / 2, R = Math.hypot(W, Hh) / 2;
+  for (let k = 1; k <= 4; k++) { g.beginPath(); g.arc(cx, cy, R * k / 4.6, 0, 7); g.strokeStyle = 'rgba(255,240,220,0.035)'; g.lineWidth = 1; g.stroke(); }
+  g.font = '400 10px "IBM Plex Mono", monospace'; g.textAlign = 'center';
+  for (const f of GRID) { const x = hzToX(f) * W; g.fillStyle = 'rgba(255,240,220,0.06)'; g.fillRect(x, 0, 1, Hh); g.fillStyle = '#5c5650'; g.fillText(f >= 1000 ? f / 1000 + 'k' : String(f), x, Hh - 10); }
+  g.save(); g.translate(14, Hh / 2); g.rotate(-Math.PI / 2); g.fillStyle = '#5c5650'; g.textAlign = 'center';
+  g.fillText('SOFT  ·  STRIKE  ·  HARD', 0, 0); g.restore();
+  // the floor: where the dive lands (your finger's pitch)
+  const fx = S.x * W; g.fillStyle = 'rgba(255,115,25,0.22)'; g.fillRect(fx - 0.75, 0, 1.5, Hh);
+  // pitch trail
+  trail.unshift({ fc: live.fc, a: live.amp }); if (trail.length > 240) trail.pop();
+  const step = Hh / 240;
+  for (let i = 1; i < trail.length; i++) {
+    const p0 = trail[i - 1], p1 = trail[i], al = Math.min(1, p0.a * 1.6);
+    if (al < 0.02) continue;
+    g.beginPath(); g.moveTo(hzToX(p0.fc) * W, (i - 1) * step); g.lineTo(hzToX(p1.fc) * W, i * step);
+    g.strokeStyle = `rgba(255,115,25,${al * (1 - i / 260)})`; g.lineWidth = 1.5 + 4 * al; g.lineCap = 'round'; g.stroke();
+  }
+  // strikes
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const rp = ripples[i], t = (now - rp.t) / 600; if (t > 1) { ripples.splice(i, 1); continue; }
+    g.beginPath(); g.arc(rp.x, rp.y, 12 + (30 + 90 * rp.u) * t, 0, 7); g.strokeStyle = `rgba(255,115,25,${(1 - t) * 0.8})`; g.lineWidth = 2; g.stroke();
+  }
+  if (stick) {                                        // decay drag: a line from where the finger landed
+    g.beginPath(); g.moveTo(stick.x * W, stick.y0 * Hh); g.lineTo(stick.x * W, stick.y * Hh); g.strokeStyle = 'rgba(233,227,217,0.25)'; g.lineWidth = 1; g.stroke();
+    g.beginPath(); g.arc(stick.x * W, stick.y * Hh, 22, 0, 7); g.strokeStyle = 'rgba(233,227,217,0.6)'; g.lineWidth = 1.5; g.stroke();
+  }
+  if (wob) {
+    const s = stick || lastStick;
+    if (s) { g.beginPath(); g.moveTo(s.x * W, s.y * Hh); g.lineTo(wob.x * W, wob.y * Hh); g.strokeStyle = `rgba(255,115,25,${0.25 + 0.6 * S.wob})`; g.lineWidth = 1 + 3 * S.wob; g.setLineDash([4, 6]); g.stroke(); g.setLineDash([]); }
+    g.beginPath(); g.arc(wob.x * W, wob.y * Hh, 18 + 6 * Math.sin(now / 32), 0, 7); g.strokeStyle = 'rgba(255,115,25,0.7)'; g.lineWidth = 1.5; g.stroke();
+  }
+  // readouts
+  const hz = xToHz(S.x), k = knobsFromTilt();
+  document.getElementById('rPitch').textContent = (hz >= 1000 ? (hz / 1000).toFixed(2) + ' kHz' : Math.round(hz) + ' Hz');
+  document.getElementById('mPitch').style.width = (S.x * 100).toFixed(1) + '%';
+  document.getElementById('rDecay').textContent = k.fdec_s.toFixed(2) + ' s';
+  document.getElementById('mDecay').style.width = ((S.dec + 1) * 50).toFixed(1) + '%';
+  document.getElementById('rWob').textContent = S.wob > 0.01 ? Math.round(S.wob * 100) + '%' : 'off';
+  document.getElementById('mWob').style.width = (S.wob * 100).toFixed(1) + '%';
+  const note = document.getElementById('note');
+  note.textContent = ctx && !stick && !wob ? 'Pitch and decay stay where you leave them, like knobs.' : '';
+  requestAnimationFrame(draw);
+}
+size(); requestAnimationFrame(draw);
+
+document.getElementById('go').addEventListener('click', async () => {
+  const err = document.getElementById('err');
+  try { const a = startAudio(); document.getElementById('start').hidden = true; size(); keepAwake(); await a; }
+  catch (e) { document.getElementById('start').hidden = false; err.hidden = false; err.textContent = 'This browser could not start audio. Try Safari or Chrome.'; }
+});
+</script>
+</body></html>
