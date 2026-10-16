@@ -86,7 +86,7 @@ const code = () => 1 + S.base + 3 * S.mode + 12 * S.beat;
 // ---------- audio: siren -> echo (mono) -> both speakers ----------
 // Echo: HH Echo Unit v9 tape path, MONO, ECO record curve (HYST off, lighter on a phone), mix 5 = full dry + full echo.
 const HH_FIXED = { vol1: 7, vol2: 5, evol: 6, hyst: 0, stereo: 0 };
-let ctx = null, node = null, eng = null, wake = null, sp = null;
+let ctx = null, node = null, eng = null, wake = null, sp = null, started = false;
 let mic = { on: false, stream: null, src: null, state: 'off', level: 0 };   // state: off | asking | live | blocked | none
 function params() {
   return { se: { osc_pos: S.base, mode: S.mode, lfo_pos: S.beat, vol: S.vol, s1: S.s1 ? 1 : 0, s2: S.s2 ? 1 : 0, trig: S.trigOn ? 1 : 0 },
@@ -102,6 +102,7 @@ async function startAudio() {
   try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch (e) {}   // 'ambient' plays over Spotify, Apple Music etc. instead of stopping them
   const AC = window.AudioContext || window.webkitAudioContext;
   ctx = new AC({ latencyHint: 'interactive' });
+  ctx.resume().catch(() => {});                         // inside the tap, before any await (iPhone needs this)
   let ok = false;
   if (ctx.audioWorklet && window.AudioWorkletNode) {
     try {
@@ -206,11 +207,37 @@ function micRelease() {                               // let go of the mic compl
 }
 function micToggle() { if (mic.state === 'asking') return; if (mic.on) micOff(); else micOn(); }
 
-document.addEventListener('visibilitychange', () => { if (document.hidden && !mic.on && mic.stream) micRelease(); if (!document.hidden && ctx) { ctx.resume(); keepAwake(true); } });
+// ---------- coming back to the page ----------
+// iPhone pauses ('interrupted') or kills the page's audio when you switch apps. Coming back we try to resume;
+// if it is still not running, the next tap anywhere resumes it, and a second tap rebuilds the audio from scratch.
+let resumeTriedAt = 0;
+function setAmbient() { try { if (navigator.audioSession) navigator.audioSession.type = mic.on ? 'play-and-record' : 'ambient'; } catch (e) {} }
+async function rebuildAudio() {
+  if (mic.stream) micRelease();
+  mic.on = false; mic.state = 'off';
+  const old = ctx; ctx = null; node = null; eng = null; sp = null;
+  try { if (old && old.state !== 'closed') old.close().catch(() => {}); } catch (e) {}
+  await startAudio(); keepAwake(true); dirty = true;
+}
+function reviveAudio() {                              // called from a tap, so the browser allows it
+  if (!started) return;
+  if (!ctx || ctx.state === 'closed') { rebuildAudio(); return; }
+  if (ctx.state === 'running') { resumeTriedAt = 0; return; }
+  setAmbient();
+  if (resumeTriedAt && performance.now() - resumeTriedAt > 300) { resumeTriedAt = 0; rebuildAudio(); return; }
+  resumeTriedAt = performance.now();
+  ctx.resume().then(() => { if (ctx && ctx.state === 'running') resumeTriedAt = 0; }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (!mic.on && mic.stream) micRelease(); return; }
+  if (ctx) { setAmbient(); ctx.resume().catch(() => {}); keepAwake(true); }
+});
+window.addEventListener('pageshow', ev => { if (ev.persisted && ctx) { setAmbient(); ctx.resume().catch(() => {}); } });
+document.addEventListener('pointerdown', reviveAudio, true);
 
 document.getElementById('power').addEventListener('click', async () => {
   const err = document.getElementById('err');
-  try { await startAudio(); keepAwake(true); document.getElementById('start').hidden = true; }
+  try { await startAudio(); started = true; keepAwake(true); document.getElementById('start').hidden = true; }
   catch (e) { err.hidden = false; err.textContent = 'This browser could not start audio. Try Chrome or Safari.'; }
 });
 
