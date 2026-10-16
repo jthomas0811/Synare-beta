@@ -50,7 +50,7 @@ h1 { margin: 0; font-size: clamp(2.4rem, 9vw, 3.8rem); line-height: 0.95; letter
 <div id="stage"><canvas id="view" aria-label="SE-1 Siren and Echo Unit controls"></canvas></div>
 <div id="start">
   <div class="card">
-    <div class="maker">Kibir La Amlak</div>
+    <div class="maker">Kibir La Amlak · v12</div>
     <h1>SE-1 Siren &amp; Echo Unit</h1>
     <ul class="how">
       <li>Tap <b>TRIG</b> to switch the siren on.</li>
@@ -308,18 +308,25 @@ const dlyAt = p => Math.max(0, Math.min(1, (p.x / F - HH.travel[0]) / (HH.travel
 // flips, so a hidden switch is flipped for each tick (one fixed strength; older iPhones get nothing).
 const haptic = (() => {
   const vib = typeof navigator.vibrate === 'function';
-  let label = null, last = 0;
-  if (!vib) {
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
-    box.innerHTML = '<input type="checkbox" switch id="hapt"><label for="hapt">.</label>';
-    document.body.appendChild(box); label = box.querySelector('label');
+  let last = 0, pending = false;
+  function iosTick() {                                   // the iOS 18 switch trick: a fresh hidden switch, clicked once
+    try {
+      const lab = document.createElement('label'); lab.ariaHidden = 'true'; lab.style.display = 'none';
+      const inp = document.createElement('input'); inp.type = 'checkbox'; inp.setAttribute('switch', '');
+      lab.appendChild(inp); document.head.appendChild(lab); lab.click(); document.head.removeChild(lab);
+    } catch (e) {}
   }
-  return (ms, gap = 0, iosGap = gap) => {                 // ms: Android pulse length; gap: minimum ms between pulses
+  // iPhone only honours the tick inside a real user action (the finger lifting). Mid-gesture ticks are held
+  // and fired on the lift.
+  const flush = () => { if (pending) { pending = false; iosTick(); } };
+  if (!vib) for (const evn of ['touchend', 'pointerup']) document.addEventListener(evn, flush, true);
+  return (ms, gap = 0, iosGap = gap) => {
     const now = performance.now();
     if (now - last < (vib ? gap : iosGap)) return;
     last = now;
-    try { if (vib) navigator.vibrate(ms); else if (label) label.click(); } catch (e) {}
+    if (vib) { try { navigator.vibrate(ms); } catch (e) {} return; }
+    const ua = navigator.userActivation;
+    if (ua && ua.isActive) iosTick(); else pending = true;
   };
 })();
 const H = { step: () => haptic(12), trig: () => haptic(22), soft: () => haptic(6, 25, 60), grain: () => haptic(3, 40, 150) };
