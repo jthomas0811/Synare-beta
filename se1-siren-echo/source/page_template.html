@@ -270,8 +270,7 @@ function drawEcho() {
   pic('hhCap', [(bx + dx) * F, HY + by * F, bw * F, bh * F]);
 }
 function drawMic() {
-  const [x, y, w, h] = MIC.bar, [bx, by, bw, bh] = MIC.box;
-  d.fillStyle = '#31312f'; d.beginPath(); d.roundRect(x * K, y * K, w * K, h * K, 4 * K); d.fill();
+  const [bx, by, bw, bh] = MIC.box;          // border only: the bar sits straight on the page
   d.strokeStyle = '#9f916f'; d.lineWidth = 1 * K; d.beginPath(); d.roundRect(bx * K, by * K, bw * K, bh * K, 2.5 * K); d.stroke();
   const [lx, ly, lw] = MIC.lamp;
   if (mic.on) pic('lamp', MIC.lamp);
