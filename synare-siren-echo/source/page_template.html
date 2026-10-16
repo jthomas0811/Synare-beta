@@ -1,0 +1,862 @@
+<title>Synare, Siren & Echo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#121211">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the siren (with its trigger and presets strip) and the echo unit, stacked in portrait, side by side in landscape. */
+:root {
+  --bench: #121211;
+  --brass: #aea88b;
+  --brass-dim: #6f6a56;
+  --amber: #ffd961;
+  --ink: #141516;
+  --display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bench); color: var(--brass); font-family: var(--display);
+  overflow: hidden; overscroll-behavior: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+body { display: flex; flex-direction: column; gap: 10px; }
+#syn { flex: 1; min-height: 120px; display: flex; flex-direction: column; gap: 6px; }
+#syn header { display: flex; align-items: center; justify-content: space-between; }
+#syn header img { height: 18px; width: auto; display: block; }
+#syn header span { font: 500 11px "IBM Plex Mono", ui-monospace, Menlo, monospace; letter-spacing: 0.14em; color: var(--brass-dim); text-transform: uppercase; }
+#pad { flex: 1; min-height: 0; width: 100%; display: block; border-radius: 14px; background: #161412; touch-action: none; }
+#stage { position: relative; flex: none; width: 100%; aspect-ratio: 282 / 377; max-height: 72%; }
+@media (orientation: landscape) {
+  body { flex-direction: row; }
+  #stage { width: auto; height: 100%; max-height: none; }
+}
+#view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#start {
+  position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; overflow-y: auto;
+  background: color-mix(in srgb, var(--bench) 90%, transparent);
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px));
+}
+#start[hidden] { display: none; }
+.card { max-width: 30rem; display: grid; gap: 14px; text-align: left; }
+.maker { font-size: 0.95rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brass-dim); font-weight: 700; }
+h1 { margin: 0; font-size: clamp(2.4rem, 9vw, 3.8rem); line-height: 0.95; letter-spacing: 0.02em; font-weight: 700; color: var(--brass); text-wrap: balance; }
+.how { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 1.12rem; font-weight: 500; line-height: 1.25; }
+.how b { color: var(--amber); font-weight: 700; letter-spacing: 0.04em; }
+#power {
+  justify-self: start; margin-top: 6px; font: 700 1.35rem/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink); background: var(--amber); border: 0; border-radius: 6px; padding: 14px 22px; cursor: pointer;
+}
+#power:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+.note { margin: 0; font-size: 0.95rem; color: var(--brass-dim); font-weight: 500; }
+#err { margin: 0; color: var(--amber); font-size: 1rem; }
+</style>
+
+<section id="syn">
+  <header><img id="synlogo" alt="Synare" src="__SYNLOGO__"><span>Strike · slide · drag</span></header>
+  <canvas id="pad" aria-label="Synare pad: tap to strike, slide sideways for pitch, drag up or down for decay, second finger for wobble"></canvas>
+</section>
+<div id="stage"><canvas id="view" aria-label="SE-1 Siren and Echo Unit controls"></canvas></div>
+<div id="start">
+  <div class="card">
+    <div class="maker">Kibir La Amlak · test 1</div>
+    <h1>Synare, SE-1 Siren &amp; Echo</h1>
+    <ul class="how">
+      <li><b>SYNARE</b> pad: tap to strike (higher hits harder), slide for pitch, drag up or down for decay, a second finger for wobble.</li>
+      <li>Tap <b>TRIG</b> to switch the siren on.</li>
+      <li>Hold <b>SIGNAL</b> and <b>SIREN</b>. Two fingers work.</li>
+      <li>Tap a number to set <b>BASE</b>, <b>MODE</b> and <b>BEAT</b>. Drag up or down on <b>VOLUME</b>.</li>
+      <li><b>MOM</b>: on while you hold TRIG. <b>TOGGLE</b>: each tap switches it.</li>
+      <li>Tap a preset to recall it. Hold one to store.</li>
+      <li>The siren and the Synare both run into the echo. Slide <b>ECHO DELAY</b> while it plays. Drag up or down on <b>ECHO REPEAT</b>; past 9 it runs away.</li>
+    </ul>
+    <button id="power" type="button">Power up</button>
+    <p class="note">Plays over your music: start Spotify or Apple Music first, then siren on top. On iPhone, if there is no sound, check the silent switch.</p>
+    <p id="err" hidden></p>
+  </div>
+</div>
+
+<script>
+'use strict';
+const L = __LAYOUT__;
+const IMG_SRC = __IMAGES__;
+const ENGINE_SRC = __ENGINE__;                         // makeSE1 (siren) and makeHH (echo, mono)
+const ENG = new Function(ENGINE_SRC + '\nreturn {makeSE1, makeHH};')();
+
+// ---------- state ----------
+const S = { base: 2, mode: 0, beat: 0, vol: 0.7, trigMode: 1, trigOn: false,
+            s1: false, s2: false, slots: [0, 0, 0, 0, 0, 0, 0, 0], active: -1,
+            rep: 4, dly: 0.58 };
+const KEEP = 'se1-siren-echo-1', KEYS = ['base','mode','beat','vol','trigMode','slots','active','rep','dly'];
+try { const j = JSON.parse(localStorage.getItem(KEEP) || 'null'); if (j) for (const k of KEYS) if (k in j) S[k] = j[k]; } catch (e) {}
+function save() { try { const o = {}; for (const k of KEYS) o[k] = S[k]; localStorage.setItem(KEEP, JSON.stringify(o)); } catch (e) {} }
+const code = () => 1 + S.base + 3 * S.mode + 12 * S.beat;
+
+// ---------- audio: siren -> echo (mono) -> both speakers ----------
+// Echo: HH Echo Unit v9 tape path, MONO, ECO record curve (HYST off, lighter on a phone), mix 5 = full dry + full echo.
+const HH_FIXED = { vol1: 7, vol2: 5, evol: 6, hyst: 0, stereo: 0 };
+let ctx = null, node = null, eng = null, wake = null, sp = null, started = false;
+let mic = { on: false, stream: null, src: null, state: 'off', level: 0 };   // state: off | asking | live | blocked | none
+function params() {
+  return { se: { osc_pos: S.base, mode: S.mode, lfo_pos: S.beat, vol: S.vol, s1: S.s1 ? 1 : 0, s2: S.s2 ? 1 : 0, trig: S.trigOn ? 1 : 0 },
+           hh: { rep: S.rep, delay_ms: 60 + 540 * S.dly }, mic: 1 };   // 'mic' input now carries the Synare
+}
+function apply(e, p) { for (const k in p.se) e.se.set(k, p.se[k]); for (const k in p.hh) e.hh.set(k, p.hh[k]); e.micT = p.mic; }
+function makePair(sr) { const p = { se: ENG.makeSE1(sr), hh: ENG.makeHH(sr), micT: 0, micG: 0, micK: 1 - Math.exp(-1 / (0.01 * sr)) }; for (const k in HH_FIXED) p.hh.set(k, HH_FIXED[k]); return p; }
+function send() {
+  const p = params();
+  if (node && node.port) node.port.postMessage(p); else if (eng) apply(eng, p);
+}
+async function startAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch (e) {}   // 'ambient' plays over Spotify, Apple Music etc. instead of stopping them
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC({ latencyHint: 'interactive' });
+  ctx.resume().catch(() => {});                         // inside the tap, before any await (iPhone needs this)
+  let ok = false;
+  if (ctx.audioWorklet && window.AudioWorkletNode) {
+    try {
+      const src = ENGINE_SRC + `
+const HH_FIXED = ${JSON.stringify(HH_FIXED)};
+class Rig extends AudioWorkletProcessor {
+  constructor() { super(); this.se = makeSE1(sampleRate); this.hh = makeHH(sampleRate);
+    for (const k in HH_FIXED) this.hh.set(k, HH_FIXED[k]);
+    this.micT = 0; this.micG = 0; this.micK = 1 - Math.exp(-1 / (0.01 * sampleRate)); this.pk = 0; this.n = 0;
+    this.port.onmessage = m => { const p = m.data; for (const k in p.se) this.se.set(k, p.se[k]); for (const k in p.hh) this.hh.set(k, p.hh[k]); this.micT = p.mic; }; }
+  process(inp, out) {
+    const a = out[0][0], b = out[0][1], se = this.se, hh = this.hh, x = inp[0] && inp[0][0], k = this.micK, t = this.micT;
+    let g = this.micG, pk = this.pk;
+    for (let i = 0; i < a.length; i++) {
+      g += (t - g) * k;                                   // 10 ms ramp: the MIC switch never clicks
+      const m = x ? x[i] * g : 0; const am = m < 0 ? -m : m; if (am > pk) pk = am;
+      se.tick(); const y = hh.tick(se.out1 + m); a[i] = y > 1 ? 1 : y < -1 ? -1 : y;
+    }
+    if (b) b.set(a);
+    this.micG = g; this.n += a.length; if (this.n >= 2048) { this.port.postMessage(pk); pk = 0; this.n = 0; } this.pk = pk;
+    return true;
+  }
+}
+registerProcessor('se1-echo', Rig);`;
+      const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+      await ctx.audioWorklet.addModule(url);
+      node = new AudioWorkletNode(ctx, 'se1-echo', { numberOfInputs: 1, outputChannelCount: [2] });
+      node.port.onmessage = m => { mic.level = Math.max(m.data, mic.level * 0.6); };
+      node.connect(ctx.destination);
+      ok = true;
+      await SYN.attach(ctx, node);                   // Synare -> echo input
+    } catch (e) { node = null; window.__wkErr = e.name + ': ' + e.message; }
+  }
+  if (!ok) {                                            // older browsers: same engines on the main thread
+    eng = makePair(ctx.sampleRate);
+    sp = ctx.createScriptProcessor(2048, 1, 2);
+    sp.onaudioprocess = ev => {
+      const a = ev.outputBuffer.getChannelData(0), b = ev.outputBuffer.getChannelData(1), x = ev.inputBuffer.getChannelData(0);
+      let pk = 0;
+      for (let i = 0; i < a.length; i++) {
+        eng.micG += (eng.micT - eng.micG) * eng.micK;
+        const m = x[i] * eng.micG; if (Math.abs(m) > pk) pk = Math.abs(m);
+        eng.se.tick(); const y = eng.hh.tick(eng.se.out1 + m); a[i] = y > 1 ? 1 : y < -1 ? -1 : y;
+      }
+      b.set(a); mic.level = Math.max(pk, mic.level * 0.6);
+    };
+    sp.connect(ctx.destination); node = null;
+  }
+  send();
+  await ctx.resume();
+}
+async function keepAwake(on) {
+  try {
+    if (on && !wake && navigator.wakeLock) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    if (!on && wake) { await wake.release(); wake = null; }
+  } catch (e) { wake = null; }
+}
+
+// ---------- coming back to the page ----------
+// iPhone pauses the page's audio when you switch apps, and on return it can be dead even when it reports 'running'.
+// So after you come back, the first tap rebuilds the audio from scratch. iPhone only allows that as the finger lifts
+// (touchend / pointerup / click), not on touchdown.
+let needRebuild = false, rebuilding = false;
+function ambient() { try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch (e) {} }
+async function rebuildAudio() {
+  if (rebuilding) return; rebuilding = true;
+  const old = ctx; ctx = null; node = null; eng = null; sp = null;
+  try { if (old && old.state !== 'closed') old.close().catch(() => {}); } catch (e) {}
+  try { await startAudio(); keepAwake(true); } finally { rebuilding = false; dirty = true; }
+}
+function reviveAudio(ev) {
+  if (!started || (ev && ev.isTrusted === false)) return;
+  if (needRebuild || !ctx || ctx.state === 'closed') { needRebuild = false; rebuildAudio(); return; }
+  if (ctx.state !== 'running') { ambient(); ctx.resume().catch(() => {}); }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (started) needRebuild = true; return; }
+  if (ctx) { ambient(); ctx.resume().catch(() => {}); keepAwake(true); }
+});
+window.addEventListener('pageshow', ev => { if (ev.persisted && started) needRebuild = true; });
+for (const evn of ['touchend', 'pointerup', 'click']) document.addEventListener(evn, reviveAudio, true);
+
+document.getElementById('power').addEventListener('click', async () => {
+  const err = document.getElementById('err');
+  try { await startAudio(); started = true; keepAwake(true); document.getElementById('start').hidden = true; }
+  catch (e) { err.hidden = false; err.textContent = 'This browser could not start audio. Try Chrome or Safari.'; }
+});
+
+// ---------- drawing ----------
+// One offscreen sheet in pt: the siren unit (282 x 169), its strip (60), a gap, then the echo unit (282 x 140).
+const K = 3;                                            // offscreen px per pt
+const F = 282 / 2619;                                   // pt per px of the echo unit artwork
+const HY = 237, HH_H = 1300 * F;                        // echo unit top and height in pt
+const DW = 282, DH = HY + HH_H;
+const SIREN_H = 229;
+const STRIP = { tmode: [7, 180, 88, 44], slots: [103, 184, 168, 24], mom: [22.5, 185.5, 15, 15], tog: [64.5, 185.5, 15, 15] };
+const HH = {                                            // echo unit, from hh_mini_layout.json (art px -> pt)
+  knobC: [947.4 * F, HY + 506.1 * F], knobBox: [811, 370, 274, 274],
+  knobHit: [(947.4 - 330) * F, HY + (506.1 - 330) * F, 660 * F, 640 * F],
+  capBox: [1231, 862, 170, 247], capCentre: 1310, travel: [630.5, 1989.5],
+  sliderHit: [470 * F, HY + 800 * F, 1680 * F, 360 * F],
+};
+const dev = document.createElement('canvas'); dev.width = DW * K; dev.height = Math.ceil(DH * K);
+const d = dev.getContext('2d');
+if (!d.roundRect) d.roundRect = function (x, y, w, h) { this.rect(x, y, w, h); };   // older Safari
+const IMG = {};
+let dirty = true;
+Object.keys(IMG_SRC).forEach(n => { const im = new Image(); im.onload = () => { dirty = true; }; im.src = IMG_SRC[n]; IMG[n] = im; });
+const ready = n => IMG[n].complete && IMG[n].naturalWidth > 0;
+const pic = (n, r) => { if (ready(n)) d.drawImage(IMG[n], r[0] * K, r[1] * K, r[2] * K, r[3] * K); };
+function pointer(r, deg, a) {
+  const R = r[2] / 2, cx = r[0] + R, cy = r[1] + R, t = deg * Math.PI / 180, s = Math.sin(t), c = -Math.cos(t);
+  d.strokeStyle = 'rgba(245,245,237,0.97)'; d.lineCap = 'round'; d.lineWidth = Math.max(1.2, a[2] * R) * K;
+  d.beginPath(); d.moveTo((cx + a[0] * R * s) * K, (cy + a[0] * R * c) * K); d.lineTo((cx + a[1] * R * s) * K, (cy + a[1] * R * c) * K); d.stroke();
+}
+function slots() {
+  const [x0, y0, w, h] = STRIP.slots, cw = w / 8, cur = code();
+  d.font = `bold ${10 * K}px Arial, Helvetica, sans-serif`; d.textAlign = 'center'; d.textBaseline = 'middle';
+  for (let i = 0; i < 8; i++) {
+    const full = S.slots[i] > 0, on = i === S.active && full, edited = on && S.slots[i] !== cur;
+    const x = (x0 + i * cw + 1.5) * K, y = (y0 + 2) * K, bw = (cw - 3) * K, bh = (h - 4) * K, r = 2.5 * K;
+    d.fillStyle = on && !edited ? '#ffd961' : full ? '#43423e' : '#141516';
+    d.beginPath(); d.roundRect(x, y, bw, bh, r); d.fill();
+    if (edited) { d.strokeStyle = '#ffd961'; d.lineWidth = 1.5 * K; d.beginPath(); d.roundRect(x + 0.75 * K, y + 0.75 * K, bw - 1.5 * K, bh - 1.5 * K, r); d.stroke(); }
+    d.fillStyle = on && !edited ? '#141516' : edited ? '#ffd961' : full ? '#eeeae0' : '#857f78';
+    d.fillText(String(i + 1), x + bw / 2, y + bh / 2 + 0.3 * K);
+  }
+}
+function drawEcho() {
+  pic('hhPlate', [0, HY, 282, HH_H]);
+  // ECHO REPEAT: the cap is drawn pointing at 5; 0 to 10 runs -150 to +150 degrees
+  if (ready('hhKnob')) {
+    const [bx, by, bw, bh] = HH.knobBox, cx = HH.knobC[0] * K, cy = HH.knobC[1] * K;
+    d.save(); d.translate(cx, cy); d.rotate((-150 + 30 * S.rep) * Math.PI / 180);
+    d.drawImage(IMG.hhKnob, (bx - 947.4) * F * K, (by - 506.1) * F * K, bw * F * K, bh * F * K);
+    d.restore();
+  }
+  // ECHO DELAY cap
+  const [x0, x1] = HH.travel, dx = x0 + (x1 - x0) * S.dly - HH.capCentre, [bx, by, bw, bh] = HH.capBox;
+  pic('hhCap', [(bx + dx) * F, HY + by * F, bw * F, bh * F]);
+}
+function drawDevice() {
+  d.clearRect(0, 0, dev.width, dev.height);
+  pic('panel', [0, 0, 500, 169]);                       // the side panel half falls outside the sheet
+  pic('strip', [0, 169, 282, 60]);
+  pointer(L.basePtr, L.angles.base[S.base], L.facePtr);
+  pointer(L.modePtr, L.angles.mode[S.mode], L.facePtr);
+  pointer(L.beatPtr, L.angles.beat[S.beat], L.facePtr);
+  pointer(L.volPtr, -150 + 300 * S.vol, L.volArgs);
+  pic(S.s1 ? 'btnOn' : 'btnOff', L.signal);
+  pic(S.s2 ? 'btnOn' : 'btnOff', L.siren);
+  pic(S.trigOn ? 'togOn' : 'togOff', L.trig);
+  pic('lamp', S.trigMode ? STRIP.tog : STRIP.mom);
+  slots();
+  drawEcho();
+}
+
+// ---------- screen layout: portrait stacks the sheet, landscape puts the echo beside the siren ----------
+const view = document.getElementById('view'), v = view.getContext('2d');
+let regions = [];                                       // {sy, sh: sheet rows; dx, dy, s: where they land on screen}
+function layout() {
+  const dpr = window.devicePixelRatio || 1, W = view.clientWidth, H = view.clientHeight;
+  view.width = Math.round(W * dpr); view.height = Math.round(H * dpr);
+  v.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const gap = 12;
+  const sP = Math.min(W / DW, H / DH);                  // stacked
+  const sL = Math.min(W / (2 * DW + gap), H / SIREN_H); // side by side
+  if (sL > sP * 1.05) {
+    const s = sL, x = (W - (2 * DW + gap) * s) / 2, y = (H - SIREN_H * s) / 2;
+    regions = [{ sy: 0, sh: SIREN_H, s, dx: x, dy: y },
+               { sy: HY, sh: DH - HY, s, dx: x + (DW + gap) * s, dy: y + (SIREN_H - (DH - HY)) / 2 * s }];
+  } else {
+    const s = sP, x = (W - DW * s) / 2, y = (H - DH * s) / 2;
+    regions = [{ sy: 0, sh: DH, s, dx: x, dy: y }];
+  }
+  dirty = true;
+}
+function paint() {
+  v.clearRect(0, 0, view.clientWidth, view.clientHeight);
+  for (const g of regions) v.drawImage(dev, 0, g.sy * K, DW * K, g.sh * K, g.dx, g.dy, DW * g.s, g.sh * g.s);
+}
+function frame() {
+  if (dirty) { drawDevice(); paint(); dirty = false; }
+  requestAnimationFrame(frame);
+}
+window.addEventListener('resize', layout);
+layout(); requestAnimationFrame(frame);
+
+// ---------- touch ----------
+const toPt = (x, y) => {
+  for (const g of regions) {
+    const px = (x - g.dx) / g.s, py = g.sy + (y - g.dy) / g.s;
+    if (px >= -8 && px <= DW + 8 && py >= g.sy - 8 && py <= g.sy + g.sh + 8) return { x: px, y: py, s: g.s };
+  }
+  return null;
+};
+const inside = (r, p, pad = 0) => p.x >= r[0] - pad && p.x <= r[0] + r[2] + pad && p.y >= r[1] - pad && p.y <= r[1] + r[3] + pad;
+const col = (r, n, x) => Math.max(0, Math.min(n - 1, Math.floor((x - r[0]) / (r[2] / n))));
+const active = new Map();                               // pointerId -> gesture
+function change() { send(); save(); dirty = true; }
+const dlyAt = p => Math.max(0, Math.min(1, (p.x / F - HH.travel[0]) / (HH.travel[1] - HH.travel[0])));
+
+// ---------- haptics ----------
+// Android: real vibration with strength by length. iPhone (iOS 18+): Safari gives a system tick when a switch control
+// flips, so a hidden switch is flipped for each tick (one fixed strength; older iPhones get nothing).
+const haptic = (() => {
+  const vib = typeof navigator.vibrate === 'function';
+  let last = 0, pending = false;
+  function iosTick() {                                   // the iOS 18 switch trick: a fresh hidden switch, clicked once
+    try {
+      const lab = document.createElement('label'); lab.ariaHidden = 'true'; lab.style.display = 'none';
+      const inp = document.createElement('input'); inp.type = 'checkbox'; inp.setAttribute('switch', '');
+      lab.appendChild(inp); document.head.appendChild(lab); lab.click(); document.head.removeChild(lab);
+    } catch (e) {}
+  }
+  // iPhone only honours the tick inside a real user action (the finger lifting). Mid-gesture ticks are held
+  // and fired on the lift.
+  const flush = () => { if (pending) { pending = false; iosTick(); } };
+  if (!vib) for (const evn of ['touchend', 'pointerup']) document.addEventListener(evn, flush, true);
+  return (ms, gap = 0, iosGap = gap) => {
+    const now = performance.now();
+    if (now - last < (vib ? gap : iosGap)) return;
+    last = now;
+    if (vib) { try { navigator.vibrate(ms); } catch (e) {} return; }
+    const ua = navigator.userActivation;
+    if (ua && ua.isActive) iosTick(); else pending = true;
+  };
+})();
+const H = { step: () => haptic(12), trig: () => haptic(22), soft: () => haptic(6, 25, 60), grain: () => haptic(3, 40, 150) };
+
+function recall(n) {
+  S.active = n; const c = S.slots[n];
+  if (c > 0) { const k = c - 1; S.base = k % 3; S.mode = Math.floor(k / 3) % 4; S.beat = Math.floor(k / 12); }
+  change();
+}
+function store(n) { S.slots[n] = code(); S.active = n; haptic(30); change(); }
+function setTrig(on) { if (on !== S.trigOn) H.trig(); S.trigOn = on; change(); }
+
+view.addEventListener('pointerdown', ev => {
+  const p = toPt(ev.offsetX, ev.offsetY); if (!p) return;
+  ev.preventDefault(); view.setPointerCapture(ev.pointerId);
+  let g = null;
+  const tab = (key, r, n) => { const v = col(r, n, p.x); if (v !== S[key]) H.step(); S[key] = v; change(); return { kind: 'tab', key, r, n }; };
+  const knob = (get, put, range, travel, det) => ({ kind: 'knob', x0: ev.offsetX, y0: ev.offsetY, v0: get(), get, put, range, travel, det });
+  if (p.y >= HY - 4) {                             // echo unit
+    if (inside(HH.sliderHit, p)) {
+      const [x0, x1] = HH.travel, capX = (x0 + (x1 - x0) * S.dly) * F;
+      if (Math.abs(p.x - capX) > 9) { S.dly = dlyAt(p); change(); }   // tap the track: the head jumps there
+      g = { kind: 'slide', off: p.x - (x0 + (x1 - x0) * S.dly) * F };
+    }
+    else if (inside(HH.knobHit, p)) g = knob(() => S.rep, x => S.rep = x, [0, 10], 240, 1);
+  }
+  else if (inside(L.baseTabs, p)) g = tab('base', L.baseTabs, 3);
+  else if (inside(L.modeTabs, p)) g = tab('mode', L.modeTabs, 4);
+  else if (inside(L.beatTabs, p)) g = tab('beat', L.beatTabs, 4);
+  else if (inside(L.signal, p, 6)) { S.s1 = true; change(); g = { kind: 'hold', key: 's1' }; }
+  else if (inside(L.siren, p, 6)) { S.s2 = true; change(); g = { kind: 'hold', key: 's2' }; }
+  else if (inside(L.trig, p, 6)) {
+    if (S.trigMode) setTrig(!S.trigOn); else { setTrig(true); g = { kind: 'mom' }; }
+  }
+  else if (inside(L.volKnob, p, 4)) g = knob(() => S.vol, x => S.vol = x, [0, 1], 220, 0.1);
+  else if (inside(STRIP.tmode, p)) { const tm = p.x < STRIP.tmode[0] + STRIP.tmode[2] / 2 ? 0 : 1; if (tm !== S.trigMode) H.step(); S.trigMode = tm; if (S.trigOn && !S.trigMode) setTrig(false); change(); }
+  else if (inside(STRIP.slots, p, 3)) {
+    const n = col(STRIP.slots, 8, p.x);
+    g = { kind: 'slot', n, timer: setTimeout(() => { store(n); g.done = true; }, 550) };
+  }
+  if (g) active.set(ev.pointerId, g);
+});
+view.addEventListener('pointermove', ev => {
+  const g = active.get(ev.pointerId); if (!g) return;
+  if (g.kind === 'tab') { const p = toPt(ev.offsetX, ev.offsetY); if (p) { const n = col(g.r, g.n, p.x); if (n !== S[g.key]) { H.step(); S[g.key] = n; change(); } } }
+  else if (g.kind === 'knob') {                         // up or right turns it up
+    const [lo, hi] = g.range, moved = (g.y0 - ev.offsetY) + (ev.offsetX - g.x0);
+    const x = Math.max(lo, Math.min(hi, g.v0 + moved / g.travel * (hi - lo)));
+    if (x !== g.get()) { if (Math.floor(x / g.det + 1e-9) !== Math.floor(g.get() / g.det + 1e-9)) H.soft(); g.put(x); change(); }
+  }
+  else if (g.kind === 'slide') {
+    const p = toPt(ev.offsetX, ev.offsetY) || { x: (ev.offsetX - regions[regions.length - 1].dx) / regions[regions.length - 1].s };
+    const x = dlyAt({ x: p.x - g.off }); if (x !== S.dly) { g.acc = (g.acc || 0) + Math.abs(x - S.dly); if (g.acc > 0.012) { g.acc = 0; H.grain(); } S.dly = x; change(); }
+  }
+});
+function end(ev) {
+  const g = active.get(ev.pointerId); if (!g) return; active.delete(ev.pointerId);
+  if (g.kind === 'hold') { S[g.key] = false; change(); }
+  else if (g.kind === 'mom') setTrig(false);
+  else if (g.kind === 'slot') { clearTimeout(g.timer); if (!g.done) recall(g.n); }
+}
+view.addEventListener('pointerup', end);
+view.addEventListener('pointercancel', end);
+view.addEventListener('contextmenu', ev => ev.preventDefault());
+
+// ================= SYNARE pad (from synare_touch.html, engine untouched) =================
+const SYN = (() => {
+// ---------- engine: the Synare v18 gen~ code (synare_v15.genexpr), transpiled sample for sample ----------
+const EP = {"tune_hz": 135, "sweep_hz": 1150, "res_amt": 1, "fdec_s": 0.17, "adec_s": 0.21, "o2mod_hz": 0, "o1_hz": 200, "o1_mode": 0, "o2_hz": 100, "o2_mode": 0, "vol_amp": 0.5, "sens_amt": 0.5, "snap_n": 0, "key_on": 0, "key_hz": 130.8128, "nl_k": 14.7, "nl_b": 0.2, "lp_hz": 6000, "cft": 0.22, "nrm": 2.85, "test_vca": 0, "pscale": 0, "sh_d": 0.7, "sh_b": 0.3, "trk_drive": 0, "trk_char": 83, "trk_odd": 0.3, "trk_shelf": 3, "trk_kp": 8, "trk_kn": 8, "trk_lim": 6, "trk_rel": 0.03, "jit_f": 0.02, "jit_s": 0.3, "lock_on": 1, "lock_th": 0.3, "lock_fd": 0.0005}, EH = {"t_h": 10, "vel_h": 0, "cf_h": 0, "ca_h": 0, "cx_h": 0, "s1_h": 0, "s2_h": 0, "s3_h": 0, "s4_h": 0, "c1_h": 0.5, "q1_h": 1, "c2_h": 0.5, "q2_h": 1, "hpx_h": 0, "hpy_h": 0, "sm_tune": 135, "sm_sweep": 1150, "sm_mod": 0, "sm_res": 1, "g1_h": 0, "gn_h": 0, "g2_h": 0, "snap_h": 0, "dcx_h": 0, "dcy_h": 0, "lp_h": 0, "jf_h": 0, "js_h": 0, "sh_h": 0, "ao_h": 0, "fx_h": 0, "fy_h": 0, "le_h": 0, "b1_h": 0, "b2_h": 0, "b3_h": 0, "b4_h": 0, "c1b_h": 0.5, "q1b_h": 1, "c2b_h": 0.5, "q2b_h": 1, "r1_h": 0, "r2_h": 0, "r3_h": 0, "r4_h": 0, "ry_h": 0, "z1_h": 0, "z2_h": 0, "z3_h": 0, "z4_h": 0, "act_h": 0, "fd_h": 1};
+const BASE = { res_amt: 1.0, sweep_hz: 2000.0, tune_hz: 150.0, fdec_s: 0.4, adec_s: 0.745, o1_mode: 0.0, o2_mode: 2.0, o2_hz: 100.0,
+  o2mod_hz: 0.0, sens_amt: 0.5, vol_amp: 1.0, key_on: 0.0, trk_lim: 6.0, trk_char: 83.0, lock_on: 1.0 };
+function synTick(P, H, IN, SR, CL, NZ) { let OUT;
+let tt,vv,cf,ca,cx,s1,s2,s3,s4,c1,q1,c2,q2,hpx,hpy,isr,ksm,ksw,tn,sw,md,rs,w1,wn,w2,g1,gn,g2,kon,tnorm,koct,kbase,fdec_e,o1_e,o2_e,kn1,st1,iv1,kn2,st2,iv2,s1b,s2b,s3b,s4b,c1b,q1b,c2b,q2b,act,fd,vq,tp,pls,oa,ofl,katt,tgf,tga,ef,ea,ex,lnr,rc1,f2,rc2,k1,c1p,rr1,k2,c2p,rr2,c1bp,rb1,c2bp,rb2,sq1b,sq2b,trib,sq1,sq2,tri,jf,js,fpre,kvib,kvibb,fjit,fc,fcb,frest,fcr,nz1,nz2,kk,gg,gq,bq,xin,sumS,uu,v1,y1,v2,y2,v3,y3,v4,y4a,ggb,gqb,bqb,xinb,sumB,ub,w1b,y1b,w2b,y2b,w3b,y3b,w4b,y4b,ggr,gqr,bqr,sr1,sr2,sr3,sr4,sumR,ur,w1r,y1r,w2r,y2r,w3r,y3r,w4r,y4r,y4,vca,yn0,yq,yn,kdc,dcy,sig,ao,dof,sb,cl,klp,lpv,khp,hp,dwet,ksh,shl,shg,tu,cwet,lin,le,lg,todd,dout,cn,tcl,trkv,kfin,fy,outv;
+tt = H.t_h;
+vv = H.vel_h;
+cf = H.cf_h;
+ca = H.ca_h;
+cx = H.cx_h;
+s1 = H.s1_h;
+s2 = H.s2_h;
+s3 = H.s3_h;
+s4 = H.s4_h;
+c1 = H.c1_h;
+q1 = H.q1_h;
+c2 = H.c2_h;
+q2 = H.q2_h;
+hpx = H.hpx_h;
+hpy = H.hpy_h;
+isr = 1.0 / SR;
+ksm = 1.0 - Math.exp(-isr / 0.02);
+ksw = 1.0 - Math.exp(-isr / 0.005);
+if (P.snap_n != H.snap_h) { ksm = 1.0; }
+tn = H.sm_tune + (P.tune_hz - H.sm_tune) * ksm;
+sw = H.sm_sweep + (P.sweep_hz - H.sm_sweep) * ksm;
+md = H.sm_mod + (P.o2mod_hz - H.sm_mod) * ksm;
+rs = H.sm_res + (P.res_amt - H.sm_res) * ksm;
+w1 = 0.0;
+wn = 0.0;
+w2 = 0.0;
+if (P.o1_mode > 0.5 && P.o1_mode < 1.5) { w1 = 1.0; }
+if (P.o1_mode > 1.5) { wn = 1.0; }
+if (P.o2_mode > 0.5 && P.o2_mode < 1.5) { w2 = 1.0; }
+g1 = H.g1_h + (w1 - H.g1_h) * ksw;
+gn = H.gn_h + (wn - H.gn_h) * ksw;
+g2 = H.g2_h + (w2 - H.g2_h) * ksw;
+kon = 0.0;
+if (P.key_on > 0.5) { kon = 1.0; }
+tnorm = Math.pow(CL((P.tune_hz - 15.0) / 3985.0, 0.0, 1.0), 1.0 / 3.0);
+koct = 0.0;
+if (tnorm < 0.3109) { koct = Math.floor((tnorm - 0.3109) / 0.3109 * 2.0 + 0.5); }
+else { koct = Math.floor((tnorm - 0.3109) / 0.6891 * 2.0 + 0.5); }
+kbase = CL(P.key_hz * Math.pow(2.0, CL(koct, -2.0, 2.0)), 15.0, 4000.0);
+fdec_e = P.fdec_s;
+if (kon > 0.5) { fdec_e = 0.005 + (P.fdec_s - 0.005) * 0.145; }
+o1_e = P.o1_hz;
+o2_e = P.o2_hz;
+if (kon > 0.5) {
+	kn1 = 1.0 - Math.sqrt(Math.max((33000.0 / Math.max(P.o1_hz, 1.0) - 22.0) / 1000.0, 0.0));
+	st1 = Math.floor(CL(kn1, 0.0, 1.0) * 6.0 + 0.5);
+	iv1 = -24.0;
+	if (st1 > 0.5) { iv1 = -12.0; }
+	if (st1 > 1.5) { iv1 = -5.0; }
+	if (st1 > 2.5) { iv1 = 0.0; }
+	if (st1 > 3.5) { iv1 = 7.0; }
+	if (st1 > 4.5) { iv1 = 12.0; }
+	if (st1 > 5.5) { iv1 = 24.0; }
+	o1_e = P.key_hz * Math.pow(2.0, iv1 / 12.0);
+	if (P.o2_mode < 1.5) {
+		kn2 = 1.0 - Math.sqrt(Math.max((33000.0 / Math.max(P.o2_hz, 1.0) - 22.0) / 1000.0, 0.0));
+		st2 = Math.floor(CL(kn2, 0.0, 1.0) * 6.0 + 0.5);
+		iv2 = -24.0;
+		if (st2 > 0.5) { iv2 = -12.0; }
+		if (st2 > 1.5) { iv2 = -5.0; }
+		if (st2 > 2.5) { iv2 = 0.0; }
+		if (st2 > 3.5) { iv2 = 7.0; }
+		if (st2 > 4.5) { iv2 = 12.0; }
+		if (st2 > 5.5) { iv2 = 24.0; }
+		o2_e = P.key_hz * Math.pow(2.0, iv2 / 12.0);
+	}
+}
+s1b = H.b1_h;
+s2b = H.b2_h;
+s3b = H.b3_h;
+s4b = H.b4_h;
+c1b = H.c1b_h;
+q1b = H.q1b_h;
+c2b = H.c2b_h;
+q2b = H.q2b_h;
+act = H.act_h;
+fd = Math.min(H.fd_h + isr / Math.max(P.lock_fd, 0.0002), 1.0);
+if (IN > 0.0) {
+	tt = 0.0;
+	vv = Math.min(IN * (0.3 + 1.7 * P.sens_amt), 1.0);
+	vq = 0.9 * (Math.max(ca - 0.045, 0.0) + 1.431 * Math.max(cx - 0.045, 0.0));
+	if (P.lock_on > 0.5 && vq < P.lock_th) {
+		act = 1.0 - act;
+		fd = 0.0;
+		if (vq < 0.002) { fd = 1.0; }
+		if (act > 0.5) {
+			q1b = 1.0;
+			c1b = 0.4;
+			q2b = 1.0;
+			c2b = 0.5;
+			s1b = H.z1_h;
+			s2b = H.z2_h;
+			s3b = H.z3_h;
+			s4b = H.z4_h;
+		}
+		else {
+			q1 = 1.0;
+			c1 = 0.4;
+			q2 = 1.0;
+			c2 = 0.5;
+			s1 = H.z1_h;
+			s2 = H.z2_h;
+			s3 = H.z3_h;
+			s4 = H.z4_h;
+		}
+	}
+}
+if (P.lock_on < 0.5) {
+	act = 0.0;
+	fd = 1.0;
+}
+tt = tt + isr;
+tp = 0.0338;
+pls = 0.0;
+if (tt < tp) { pls = vv * Math.sin(3.14159265 * tt / tp); }
+oa = 0.045;
+ofl = 0.0604;
+katt = 1.0 - Math.exp(-isr / 0.001);
+tgf = pls * (1.0 + ofl);
+tga = pls * (1.0 + oa);
+if (tgf > cf) { cf = cf + (tgf - cf) * katt; } else { cf = cf * Math.exp(-isr / Math.max(fdec_e, 0.005)); }
+if (tga > ca) { ca = ca + (tga - ca) * katt; } else { ca = ca * Math.exp(-isr / Math.max(P.adec_s, 0.005)); }
+if (tga > cx) { cx = cx + (tga - cx) * katt; } else { cx = cx * Math.exp(-isr / 0.0234); }
+ef = Math.max(cf - ofl, 0.0);
+ea = Math.max(ca - oa, 0.0);
+ex = Math.max(cx - oa, 0.0);
+lnr = 0.405465;
+rc1 = 1.0 / (2.0 * lnr * Math.max(o1_e, 1.0));
+f2 = Math.max(o2_e, 1.0);
+if (P.o2_mode > 1.5) { f2 = f2 / 20.0; }
+rc2 = 1.0 / (2.0 * lnr * f2);
+k1 = 1.0 - Math.exp(-isr / rc1);
+c1p = c1;
+c1 = c1 + (q1 - c1) * k1;
+if (q1 > 0.5 && c1 > 0.6) { rr1 = isr - rc1 * Math.log((1.0 - c1p) / 0.4); q1 = 0.0; c1 = 0.6 * Math.exp(-Math.max(rr1, 0.0) / rc1); }
+else if (q1 < 0.5 && c1 < 0.4) { rr1 = isr - rc1 * Math.log(c1p / 0.4); q1 = 1.0; c1 = 1.0 - 0.6 * Math.exp(-Math.max(rr1, 0.0) / rc1); }
+k2 = 1.0 - Math.exp(-isr / rc2);
+c2p = c2;
+c2 = c2 + (q2 - c2) * k2;
+if (q2 > 0.5 && c2 > 0.6) { rr2 = isr - rc2 * Math.log((1.0 - c2p) / 0.4); q2 = 0.0; c2 = 0.6 * Math.exp(-Math.max(rr2, 0.0) / rc2); }
+else if (q2 < 0.5 && c2 < 0.4) { rr2 = isr - rc2 * Math.log(c2p / 0.4); q2 = 1.0; c2 = 1.0 - 0.6 * Math.exp(-Math.max(rr2, 0.0) / rc2); }
+c1bp = c1b;
+c1b = c1b + (q1b - c1b) * k1;
+if (q1b > 0.5 && c1b > 0.6) { rb1 = isr - rc1 * Math.log((1.0 - c1bp) / 0.4); q1b = 0.0; c1b = 0.6 * Math.exp(-Math.max(rb1, 0.0) / rc1); }
+else if (q1b < 0.5 && c1b < 0.4) { rb1 = isr - rc1 * Math.log(c1bp / 0.4); q1b = 1.0; c1b = 1.0 - 0.6 * Math.exp(-Math.max(rb1, 0.0) / rc1); }
+c2bp = c2b;
+c2b = c2b + (q2b - c2b) * k2;
+if (q2b > 0.5 && c2b > 0.6) { rb2 = isr - rc2 * Math.log((1.0 - c2bp) / 0.4); q2b = 0.0; c2b = 0.6 * Math.exp(-Math.max(rb2, 0.0) / rc2); }
+else if (q2b < 0.5 && c2b < 0.4) { rb2 = isr - rc2 * Math.log(c2bp / 0.4); q2b = 1.0; c2b = 1.0 - 0.6 * Math.exp(-Math.max(rb2, 0.0) / rc2); }
+sq1b = q1b * 2.0 - 1.0;
+sq2b = q2b * 2.0 - 1.0;
+trib = (c2b - 0.5) * 10.0;
+sq1 = q1 * 2.0 - 1.0;
+sq2 = q2 * 2.0 - 1.0;
+tri = (c2 - 0.5) * 10.0;
+jf = H.jf_h + (NZ() - H.jf_h) * (1.0 - Math.exp(-6.28318531 * 300.0 * isr));
+js = H.js_h + (NZ() - H.js_h) * (1.0 - Math.exp(-6.28318531 * 4.0 * isr));
+fpre = tn + sw * ef;
+if (kon > 0.5) { fpre = kbase * (1.0 + (sw / 3000.0) * ef); }
+kvib = 1.0;
+kvibb = 1.0;
+if (kon > 0.5) {
+	kvib = Math.pow(2.0, tri * md * 0.02 / 1200.0);
+	kvibb = Math.pow(2.0, trib * md * 0.02 / 1200.0);
+}
+fjit = (1.0 + P.jit_f * jf + P.jit_s * js) * (1.0034 + 0.007 * rs - 0.0042 * Math.pow(CL((1.0 - rs) / 0.65, 0.0, 1.0), 4.0));
+fc = CL((fpre * kvib + md * tri * (1.0 - kon)) * fjit, 15.0, 0.4 * SR);
+fcb = CL((fpre * kvibb + md * trib * (1.0 - kon)) * fjit, 15.0, 0.4 * SR);
+frest = tn;
+if (kon > 0.5) { frest = kbase; }
+fcr = CL(frest * fjit, 15.0, 0.4 * SR);
+nz1 = NZ();
+nz2 = NZ();
+kk = P.nl_k * CL(rs, 0.0, 1.0);
+gg = Math.tan(3.14159265 * fc * isr);
+gq = gg / (1.0 + gg);
+bq = 1.0 / (1.0 + gg);
+xin = 0.16 * (g1 * sq1 + gn * nz1 + g2 * sq2) + 0.00001 * nz2;
+sumS = gq * gq * gq * bq * s1 + gq * gq * bq * s2 + gq * bq * s3 + bq * s4;
+uu = Math.tanh((xin - kk * sumS) / (1.0 + kk * gq * gq * gq * gq) + P.nl_b) - Math.tanh(P.nl_b);
+v1 = (uu - s1) * gq;
+y1 = v1 + s1;
+s1 = y1 + v1;
+v2 = (y1 - s2) * gq;
+y2 = v2 + s2;
+s2 = y2 + v2;
+v3 = (y2 - s3) * gq;
+y3 = v3 + s3;
+s3 = y3 + v3;
+v4 = (y3 - s4) * gq;
+y4a = v4 + s4;
+s4 = y4a + v4;
+ggb = Math.tan(3.14159265 * fcb * isr);
+gqb = ggb / (1.0 + ggb);
+bqb = 1.0 / (1.0 + ggb);
+xinb = 0.16 * (g1 * sq1b + gn * nz1 + g2 * sq2b) + 0.00001 * nz2;
+sumB = gqb * gqb * gqb * bqb * s1b + gqb * gqb * bqb * s2b + gqb * bqb * s3b + bqb * s4b;
+ub = Math.tanh((xinb - kk * sumB) / (1.0 + kk * gqb * gqb * gqb * gqb) + P.nl_b) - Math.tanh(P.nl_b);
+w1b = (ub - s1b) * gqb;
+y1b = w1b + s1b;
+s1b = y1b + w1b;
+w2b = (y1b - s2b) * gqb;
+y2b = w2b + s2b;
+s2b = y2b + w2b;
+w3b = (y2b - s3b) * gqb;
+y3b = w3b + s3b;
+s3b = y3b + w3b;
+w4b = (y3b - s4b) * gqb;
+y4b = w4b + s4b;
+s4b = y4b + w4b;
+ggr = Math.tan(3.14159265 * fcr * isr);
+gqr = ggr / (1.0 + ggr);
+bqr = 1.0 / (1.0 + ggr);
+sr1 = H.r1_h;
+sr2 = H.r2_h;
+sr3 = H.r3_h;
+sr4 = H.r4_h;
+sumR = gqr * gqr * gqr * bqr * sr1 + gqr * gqr * bqr * sr2 + gqr * bqr * sr3 + bqr * sr4;
+ur = Math.tanh((0.00001 - kk * sumR) / (1.0 + kk * gqr * gqr * gqr * gqr) + P.nl_b) - Math.tanh(P.nl_b);
+w1r = (ur - sr1) * gqr;
+y1r = w1r + sr1;
+sr1 = y1r + w1r;
+w2r = (y1r - sr2) * gqr;
+y2r = w2r + sr2;
+sr2 = y2r + w2r;
+w3r = (y2r - sr3) * gqr;
+y3r = w3r + sr3;
+sr3 = y3r + w3r;
+w4r = (y3r - sr4) * gqr;
+y4r = w4r + sr4;
+sr4 = y4r + w4r;
+if (H.ry_h < 0.0 && y4r >= 0.0) {
+	H.z1_h = sr1;
+	H.z2_h = sr2;
+	H.z3_h = sr3;
+	H.z4_h = sr4;
+}
+H.r1_h = sr1;
+H.r2_h = sr2;
+H.r3_h = sr3;
+H.r4_h = sr4;
+H.ry_h = y4r;
+y4 = y4a;
+if (act > 0.5) { y4 = y4b * fd + y4a * (1.0 - fd); }
+else { y4 = y4a * fd + y4b * (1.0 - fd); }
+H.b1_h = s1b;
+H.b2_h = s2b;
+H.b3_h = s3b;
+H.b4_h = s4b;
+H.c1b_h = c1b;
+H.q1b_h = q1b;
+H.c2b_h = c2b;
+H.q2b_h = q2b;
+H.act_h = act;
+H.fd_h = fd;
+vca = 0.9 * (ea + 1.431 * ex) + P.test_vca;
+yn0 = y4 * P.nrm;
+yq = yn0 * yn0;
+yn = yn0 + P.pscale * (0.09 * yq + 0.08 * yq * yn0 + 0.025 * yq * yq + 0.016 * yq * yq * yn0);
+yn = (Math.tanh(P.sh_d * (yn + P.sh_b)) - Math.tanh(P.sh_d * P.sh_b)) / Math.tanh(P.sh_d);
+kdc = Math.exp(-6.28318531 * 5.0 * isr);
+dcy = kdc * (H.dcy_h + yn - H.dcx_h);
+sig = dcy * vca;
+ao = H.ao_h + (Math.abs(dcy) - H.ao_h) * (1.0 - Math.exp(-isr / 0.01));
+dof = P.cft * vca * Math.min(ao / 0.6, 1.0);
+sb = sig + dof;
+cl = sb / Math.pow(1.0 + Math.pow(Math.abs(sb), 10.0), 0.1);
+klp = 1.0 - Math.exp(-6.28318531 * P.lp_hz * isr);
+lpv = H.lp_h + (cl - H.lp_h) * klp;
+khp = Math.exp(-6.28318531 * 5.0 * isr);
+hp = khp * (hpy + lpv - hpx);
+dwet = CL(P.trk_lim / 2.0, 0.0, 1.0);
+ksh = 1.0 - Math.exp(-6.28318531 * 1500.0 * isr);
+shl = H.sh_h + (hp - H.sh_h) * ksh;
+shg = Math.pow(10.0, P.trk_shelf / 20.0);
+tu = (shl + (hp - shl) * shg) * Math.pow(10.0, (P.trk_drive + P.trk_lim) / 20.0);
+cwet = CL(P.trk_char / 10.0, 0.0, 1.0);
+lin = Math.max(tu, -tu * (1.0 - cwet));
+le = H.le_h * Math.exp(-isr / Math.max(P.trk_rel, 0.005));
+if (lin > le) { le = lin; }
+lg = 1.0;
+if (le > 1.0) { lg = 1.0 / le; }
+tu = tu * lg;
+todd = Math.tanh(P.trk_odd * tu) / Math.max(P.trk_odd, 0.001);
+dout = hp + (todd - hp) * dwet;
+cn = 1.0 / (1.0 + CL(P.trk_char, 0.0, 100.0) * 0.006);
+tcl = dout / Math.pow(1.0 + Math.pow(Math.abs(dout), P.trk_kp), 1.0 / P.trk_kp);
+if (dout < 0.0) { tcl = -cn * (Math.abs(dout) / cn) / Math.pow(1.0 + Math.pow(Math.abs(dout) / cn, P.trk_kn), 1.0 / P.trk_kn); }
+trkv = dout + (tcl - dout) * cwet;
+kfin = Math.exp(-6.28318531 * 0.5 * isr);
+fy = kfin * (H.fy_h + trkv - H.fx_h);
+outv = fy * P.vol_amp * 0.5;
+OUT = outv;
+OUT = outv;
+H.t_h = tt;
+H.vel_h = vv;
+H.cf_h = cf;
+H.ca_h = ca;
+H.cx_h = cx;
+H.s1_h = s1;
+H.s2_h = s2;
+H.s3_h = s3;
+H.s4_h = s4;
+H.c1_h = c1;
+H.q1_h = q1;
+H.c2_h = c2;
+H.q2_h = q2;
+H.hpx_h = lpv;
+H.dcx_h = yn;
+H.dcy_h = dcy;
+H.lp_h = lpv;
+H.jf_h = jf;
+H.sh_h = shl;
+H.ao_h = ao;
+H.fx_h = trkv;
+H.fy_h = fy;
+H.le_h = le;
+H.js_h = js;
+H.hpy_h = hp;
+H.sm_tune = tn;
+H.snap_h = P.snap_n;
+H.sm_sweep = sw;
+H.sm_mod = md;
+H.sm_res = rs;
+H.g1_h = g1;
+H.gn_h = gn;
+H.g2_h = g2;
+return OUT; }
+
+// worklet source built from the same function text, so main thread and worklet run identical code
+function workletSource() {
+  return `const EP=${JSON.stringify(EP)},EH=${JSON.stringify(EH)},BASE=${JSON.stringify(BASE)};
+${synTick.toString()}
+class Syn extends AudioWorkletProcessor{constructor(){super();this.P=Object.assign({},EP,BASE);this.H=Object.assign({},EH);this.hit=0;this.n=0;this.seed=24680;
+this.port.onmessage=e=>{const d=e.data;if(d.p)Object.assign(this.P,d.p);if(d.hit)this.hit=Math.max(this.hit,d.hit);};}
+process(i,o){const a=o[0][0],b=o[0][1],P=this.P,H=this.H,SR=sampleRate;let s=this.seed;
+const NZ=()=>{s=(s*1664525+1013904223)>>>0;return s/2147483648-1;},CL=(x,lo,hi)=>x<lo?lo:x>hi?hi:x;
+for(let k=0;k<a.length;k++){const IN=this.hit;this.hit=0;let y=synTick(P,H,IN,SR,CL,NZ);a[k]=y>1?1:y<-1?-1:y;}
+if(b)b.set(a);this.seed=s;this.n+=a.length;
+if(this.n>=256){this.n=0;this.port.postMessage({fc:H.sm_tune+H.sm_sweep*Math.max(H.cf_h-0.0604,0)+H.sm_mod*(H.c2_h-0.5)*10,amp:0.9*(Math.max(H.ca_h-0.045,0)+1.431*Math.max(H.cx_h-0.045,0))});}
+return true;}}
+registerProcessor('synare',Syn);`;
+}
+
+
+  const FMIN = 70, FMAX = 2500;                        // pad width: 70 Hz (left) to 2.5 kHz (right), log
+  const xToHz = x => FMIN * Math.pow(FMAX / FMIN, x);
+  const hzToX = f => Math.log(Math.max(f, 1) / FMIN) / Math.log(FMAX / FMIN);
+  const strike = u => Math.pow(0.31 + 0.69 * u, 2);    // tap height to strike: bottom = lightest, top = full hit
+  const st = { x: hzToX(150), dec: 0, wob: 0 };
+  const live = { fc: 150, amp: 0 };
+  let node = null;
+  function knobs() {
+    const d = st.dec, fk = 63 + (d > 0 ? 27 : 28) * d, ak = 58 + 32 * d;
+    return { fdec_s: 0.005 + Math.pow(fk / 100, 2), adec_s: 0.005 + 2.2 * Math.pow(ak / 100, 2), o2mod_hz: 700 * st.wob };
+  }
+  function send() { if (node) node.port.postMessage({ p: Object.assign({ tune_hz: xToHz(st.x) }, knobs()) }); }
+  function hit(v) { if (node) node.port.postMessage({ hit: v }); }
+  async function attach(ac, dest) {                    // called for each new audio context (also after a rebuild)
+    node = null;
+    try {
+      const url = URL.createObjectURL(new Blob([workletSource()], { type: 'application/javascript' }));
+      await ac.audioWorklet.addModule(url);
+      node = new AudioWorkletNode(ac, 'synare', { numberOfInputs: 0, outputChannelCount: [1] });
+      node.port.onmessage = e => { live.fc = e.data.fc; live.amp = e.data.amp; };
+      node.connect(dest); send();
+    } catch (e) { node = null; window.__synErr = e.name + ': ' + e.message; }
+  }
+
+  // ---------- the pad ----------
+  const pad = document.getElementById('pad'), g = pad.getContext('2d');
+  for (const evn of ['touchstart', 'touchmove']) pad.addEventListener(evn, e => e.preventDefault(), { passive: false });
+  for (const evn of ['gesturestart', 'gesturechange', 'dblclick']) document.addEventListener(evn, e => e.preventDefault(), { passive: false });
+  let W = 0, Hh = 0;
+  function size() { const dpr = window.devicePixelRatio || 1; W = pad.clientWidth; Hh = pad.clientHeight; pad.width = Math.round(W * dpr); pad.height = Math.round(Hh * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  window.addEventListener('resize', size);
+  let stick = null, wob = null, lastStick = null; const ripples = [];
+  function rel(e) { const r = pad.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+  function wobDepth() {
+    if (!wob) return 0; const s = stick || lastStick; if (!s) return 0;
+    const d = Math.hypot((wob.x - s.x) * W, (wob.y - s.y) * Hh) / Math.hypot(W, Hh);
+    return Math.max(0, Math.min(1, (d - 0.06) / 0.5));
+  }
+  pad.addEventListener('pointerdown', e => {
+    if (!started) return; e.preventDefault(); pad.setPointerCapture(e.pointerId);
+    const [x, y] = rel(e);
+    if (stick && !wob) { wob = { id: e.pointerId, x, y }; st.wob = wobDepth(); send(); return; }
+    if (stick) return;
+    stick = { id: e.pointerId, x, y, y0: y, d0: st.dec }; lastStick = stick;
+    const u = Math.max(0, Math.min(1, 1 - y));
+    st.x = Math.max(0, Math.min(1, x)); send(); hit(strike(u)); haptic(8 + 14 * u);
+    ripples.push({ x: x * W, y: y * Hh, t: performance.now(), u });
+  });
+  pad.addEventListener('pointermove', e => {
+    const [x, y] = rel(e);
+    if (stick && e.pointerId === stick.id) {
+      stick.x = x; stick.y = y; st.x = Math.max(0, Math.min(1, x));
+      st.dec = Math.max(-1, Math.min(1, stick.d0 + (stick.y0 - y) / 0.35));
+    } else if (wob && e.pointerId === wob.id) { wob.x = x; wob.y = y; } else return;
+    st.wob = wobDepth(); send();
+  });
+  function lift(e) {
+    if (stick && e.pointerId === stick.id) { lastStick = { x: stick.x, y: stick.y }; stick = null; }
+    else if (wob && e.pointerId === wob.id) { wob = null; st.wob = 0; send(); }
+  }
+  pad.addEventListener('pointerup', lift); pad.addEventListener('pointercancel', lift);
+
+  const trail = [], GRID = [100, 200, 500, 1000, 2000];
+  function draw(now) {
+    if (pad.clientWidth !== W || pad.clientHeight !== Hh) size();
+    g.clearRect(0, 0, W, Hh);
+    const cx = W / 2, cy = Hh / 2, R = Math.hypot(W, Hh) / 2;
+    for (let k = 1; k <= 4; k++) { g.beginPath(); g.arc(cx, cy, R * k / 4.6, 0, 7); g.strokeStyle = 'rgba(255,240,220,0.035)'; g.lineWidth = 1; g.stroke(); }
+    g.font = '400 10px "IBM Plex Mono", monospace'; g.textAlign = 'center';
+    for (const f of GRID) { const x = hzToX(f) * W; g.fillStyle = 'rgba(255,240,220,0.06)'; g.fillRect(x, 0, 1, Hh); g.fillStyle = '#5c5650'; g.fillText(f >= 1000 ? f / 1000 + 'k' : String(f), x, Hh - 8); }
+    g.save(); g.translate(14, Hh / 2); g.rotate(-Math.PI / 2); g.fillStyle = '#5c5650'; g.fillText('SOFT  ·  STRIKE  ·  HARD', 0, 0); g.restore();
+    const fx = st.x * W; g.fillStyle = 'rgba(255,115,25,0.22)'; g.fillRect(fx - 0.75, 0, 1.5, Hh);
+    trail.unshift({ fc: live.fc, a: live.amp }); if (trail.length > 160) trail.pop();
+    const step = Hh / 160;
+    for (let i = 1; i < trail.length; i++) {
+      const p0 = trail[i - 1], p1 = trail[i], al = Math.min(1, p0.a * 1.6);
+      if (al < 0.02) continue;
+      g.beginPath(); g.moveTo(hzToX(p0.fc) * W, (i - 1) * step); g.lineTo(hzToX(p1.fc) * W, i * step);
+      g.strokeStyle = `rgba(255,115,25,${al * (1 - i / 175)})`; g.lineWidth = 1.5 + 4 * al; g.lineCap = 'round'; g.stroke();
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const rp = ripples[i], t = (now - rp.t) / 600; if (t > 1) { ripples.splice(i, 1); continue; }
+      g.beginPath(); g.arc(rp.x, rp.y, 12 + (30 + 90 * rp.u) * t, 0, 7); g.strokeStyle = `rgba(255,115,25,${(1 - t) * 0.8})`; g.lineWidth = 2; g.stroke();
+    }
+    if (stick) {
+      g.beginPath(); g.moveTo(stick.x * W, stick.y0 * Hh); g.lineTo(stick.x * W, stick.y * Hh); g.strokeStyle = 'rgba(233,227,217,0.25)'; g.lineWidth = 1; g.stroke();
+      g.beginPath(); g.arc(stick.x * W, stick.y * Hh, 22, 0, 7); g.strokeStyle = 'rgba(233,227,217,0.6)'; g.lineWidth = 1.5; g.stroke();
+    }
+    if (wob) {
+      const s = stick || lastStick;
+      if (s) { g.beginPath(); g.moveTo(s.x * W, s.y * Hh); g.lineTo(wob.x * W, wob.y * Hh); g.strokeStyle = `rgba(255,115,25,${0.25 + 0.6 * st.wob})`; g.lineWidth = 1 + 3 * st.wob; g.setLineDash([4, 6]); g.stroke(); g.setLineDash([]); }
+      g.beginPath(); g.arc(wob.x * W, wob.y * Hh, 18 + 6 * Math.sin(now / 32), 0, 7); g.strokeStyle = 'rgba(255,115,25,0.7)'; g.lineWidth = 1.5; g.stroke();
+    }
+    requestAnimationFrame(draw);
+  }
+  size(); requestAnimationFrame(draw);
+  return { attach, st, live };
+})();
+</script>
