@@ -171,8 +171,8 @@ async function rebuildAudio() {
   try { if (old && old.state !== 'closed') old.close().catch(() => {}); } catch (e) {}
   try { await startAudio(); keepAwake(true); } finally { rebuilding = false; dirty = true; }
 }
-function reviveAudio() {
-  if (!started) return;
+function reviveAudio(ev) {
+  if (!started || (ev && ev.isTrusted === false)) return;
   if (needRebuild || !ctx || ctx.state === 'closed') { needRebuild = false; rebuildAudio(); return; }
   if (ctx.state !== 'running') { ambient(); ctx.resume().catch(() => {}); }
 }
@@ -303,27 +303,48 @@ const active = new Map();                               // pointerId -> gesture
 function change() { send(); save(); dirty = true; }
 const dlyAt = p => Math.max(0, Math.min(1, (p.x / F - HH.travel[0]) / (HH.travel[1] - HH.travel[0])));
 
+// ---------- haptics ----------
+// Android: real vibration with strength by length. iPhone (iOS 18+): Safari gives a system tick when a switch control
+// flips, so a hidden switch is flipped for each tick (one fixed strength; older iPhones get nothing).
+const haptic = (() => {
+  const vib = typeof navigator.vibrate === 'function';
+  let label = null, last = 0;
+  if (!vib) {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none';
+    box.innerHTML = '<input type="checkbox" switch id="hapt"><label for="hapt">.</label>';
+    document.body.appendChild(box); label = box.querySelector('label');
+  }
+  return (ms, gap = 0, iosGap = gap) => {                 // ms: Android pulse length; gap: minimum ms between pulses
+    const now = performance.now();
+    if (now - last < (vib ? gap : iosGap)) return;
+    last = now;
+    try { if (vib) navigator.vibrate(ms); else if (label) label.click(); } catch (e) {}
+  };
+})();
+const H = { step: () => haptic(12), trig: () => haptic(22), soft: () => haptic(6, 25, 60), grain: () => haptic(3, 40, 150) };
+
 function recall(n) {
   S.active = n; const c = S.slots[n];
   if (c > 0) { const k = c - 1; S.base = k % 3; S.mode = Math.floor(k / 3) % 4; S.beat = Math.floor(k / 12); }
   change();
 }
-function store(n) { S.slots[n] = code(); S.active = n; if (navigator.vibrate) navigator.vibrate(30); change(); }
-function setTrig(on) { S.trigOn = on; change(); }
+function store(n) { S.slots[n] = code(); S.active = n; haptic(30); change(); }
+function setTrig(on) { if (on !== S.trigOn) H.trig(); S.trigOn = on; change(); }
 
 view.addEventListener('pointerdown', ev => {
   const p = toPt(ev.offsetX, ev.offsetY); if (!p) return;
   ev.preventDefault(); view.setPointerCapture(ev.pointerId);
   let g = null;
-  const tab = (key, r, n) => { S[key] = col(r, n, p.x); change(); return { kind: 'tab', key, r, n }; };
-  const knob = (get, put, range, travel) => ({ kind: 'knob', x0: ev.offsetX, y0: ev.offsetY, v0: get(), get, put, range, travel });
+  const tab = (key, r, n) => { const v = col(r, n, p.x); if (v !== S[key]) H.step(); S[key] = v; change(); return { kind: 'tab', key, r, n }; };
+  const knob = (get, put, range, travel, det) => ({ kind: 'knob', x0: ev.offsetX, y0: ev.offsetY, v0: get(), get, put, range, travel, det });
   if (p.y >= HY - 4) {                             // echo unit
     if (inside(HH.sliderHit, p)) {
       const [x0, x1] = HH.travel, capX = (x0 + (x1 - x0) * S.dly) * F;
       if (Math.abs(p.x - capX) > 9) { S.dly = dlyAt(p); change(); }   // tap the track: the head jumps there
       g = { kind: 'slide', off: p.x - (x0 + (x1 - x0) * S.dly) * F };
     }
-    else if (inside(HH.knobHit, p)) g = knob(() => S.rep, x => S.rep = x, [0, 10], 240);
+    else if (inside(HH.knobHit, p)) g = knob(() => S.rep, x => S.rep = x, [0, 10], 240, 1);
   }
   else if (inside(L.baseTabs, p)) g = tab('base', L.baseTabs, 3);
   else if (inside(L.modeTabs, p)) g = tab('mode', L.modeTabs, 4);
@@ -333,8 +354,8 @@ view.addEventListener('pointerdown', ev => {
   else if (inside(L.trig, p, 6)) {
     if (S.trigMode) setTrig(!S.trigOn); else { setTrig(true); g = { kind: 'mom' }; }
   }
-  else if (inside(L.volKnob, p, 4)) g = knob(() => S.vol, x => S.vol = x, [0, 1], 220);
-  else if (inside(STRIP.tmode, p)) { S.trigMode = p.x < STRIP.tmode[0] + STRIP.tmode[2] / 2 ? 0 : 1; if (S.trigOn && !S.trigMode) setTrig(false); change(); }
+  else if (inside(L.volKnob, p, 4)) g = knob(() => S.vol, x => S.vol = x, [0, 1], 220, 0.1);
+  else if (inside(STRIP.tmode, p)) { const tm = p.x < STRIP.tmode[0] + STRIP.tmode[2] / 2 ? 0 : 1; if (tm !== S.trigMode) H.step(); S.trigMode = tm; if (S.trigOn && !S.trigMode) setTrig(false); change(); }
   else if (inside(STRIP.slots, p, 3)) {
     const n = col(STRIP.slots, 8, p.x);
     g = { kind: 'slot', n, timer: setTimeout(() => { store(n); g.done = true; }, 550) };
@@ -343,15 +364,15 @@ view.addEventListener('pointerdown', ev => {
 });
 view.addEventListener('pointermove', ev => {
   const g = active.get(ev.pointerId); if (!g) return;
-  if (g.kind === 'tab') { const p = toPt(ev.offsetX, ev.offsetY); if (p) { const n = col(g.r, g.n, p.x); if (n !== S[g.key]) { S[g.key] = n; change(); } } }
+  if (g.kind === 'tab') { const p = toPt(ev.offsetX, ev.offsetY); if (p) { const n = col(g.r, g.n, p.x); if (n !== S[g.key]) { H.step(); S[g.key] = n; change(); } } }
   else if (g.kind === 'knob') {                         // up or right turns it up
     const [lo, hi] = g.range, moved = (g.y0 - ev.offsetY) + (ev.offsetX - g.x0);
     const x = Math.max(lo, Math.min(hi, g.v0 + moved / g.travel * (hi - lo)));
-    if (x !== g.get()) { g.put(x); change(); }
+    if (x !== g.get()) { if (Math.floor(x / g.det + 1e-9) !== Math.floor(g.get() / g.det + 1e-9)) H.soft(); g.put(x); change(); }
   }
   else if (g.kind === 'slide') {
     const p = toPt(ev.offsetX, ev.offsetY) || { x: (ev.offsetX - regions[regions.length - 1].dx) / regions[regions.length - 1].s };
-    const x = dlyAt({ x: p.x - g.off }); if (x !== S.dly) { S.dly = x; change(); }
+    const x = dlyAt({ x: p.x - g.off }); if (x !== S.dly) { g.acc = (g.acc || 0) + Math.abs(x - S.dly); if (g.acc > 0.012) { g.acc = 0; H.grain(); } S.dly = x; change(); }
   }
 });
 function end(ev) {
