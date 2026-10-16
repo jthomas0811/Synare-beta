@@ -1,0 +1,399 @@
+<title>SE-1 Siren & Echo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#121211">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&display=swap">
+<style>
+/* Layout: the siren (with its trigger and presets strip) and the echo unit, stacked in portrait, side by side in landscape. */
+:root {
+  --bench: #121211;
+  --brass: #aea88b;
+  --brass-dim: #6f6a56;
+  --amber: #ffd961;
+  --ink: #141516;
+  --display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bench); color: var(--brass); font-family: var(--display);
+  overflow: hidden; overscroll-behavior: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+#stage { position: relative; width: 100%; height: 100%; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#start {
+  position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; overflow-y: auto;
+  background: color-mix(in srgb, var(--bench) 90%, transparent);
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px));
+}
+#start[hidden] { display: none; }
+.card { max-width: 30rem; display: grid; gap: 14px; text-align: left; }
+.maker { font-size: 0.95rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brass-dim); font-weight: 700; }
+h1 { margin: 0; font-size: clamp(2.4rem, 9vw, 3.8rem); line-height: 0.95; letter-spacing: 0.02em; font-weight: 700; color: var(--brass); text-wrap: balance; }
+.how { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 1.12rem; font-weight: 500; line-height: 1.25; }
+.how b { color: var(--amber); font-weight: 700; letter-spacing: 0.04em; }
+#power {
+  justify-self: start; margin-top: 6px; font: 700 1.35rem/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink); background: var(--amber); border: 0; border-radius: 6px; padding: 14px 22px; cursor: pointer;
+}
+#power:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+.note { margin: 0; font-size: 0.95rem; color: var(--brass-dim); font-weight: 500; }
+#err { margin: 0; color: var(--amber); font-size: 1rem; }
+</style>
+
+<div id="stage"><canvas id="view" aria-label="SE-1 Siren and Echo Unit controls"></canvas></div>
+<div id="start">
+  <div class="card">
+    <div class="maker">Kibir La Amlak</div>
+    <h1>SE-1 Siren &amp; Echo Unit</h1>
+    <ul class="how">
+      <li>Tap <b>TRIG</b> to switch the siren on.</li>
+      <li>Hold <b>SIGNAL</b> and <b>SIREN</b>. Two fingers work.</li>
+      <li>Tap a number to set <b>BASE</b>, <b>MODE</b> and <b>BEAT</b>. Drag up or down on <b>VOLUME</b>.</li>
+      <li><b>MOM</b>: on while you hold TRIG. <b>TOGGLE</b>: each tap switches it.</li>
+      <li>Tap a preset to recall it. Hold one to store.</li>
+      <li>The siren runs into the echo. Slide <b>ECHO DELAY</b> while it plays. Drag up or down on <b>ECHO REPEAT</b>; past 9 it runs away.</li>
+      <li>Tap <b>MIC INTO ECHO</b> to put your voice through the echo too. Use headphones, or the speaker will feed back into the mic.</li>
+    </ul>
+    <button id="power" type="button">Power up</button>
+    <p class="note">Headphones or a speaker recommended. On iPhone, if there is no sound, check the silent switch.</p>
+    <p id="err" hidden></p>
+  </div>
+</div>
+
+<script>
+'use strict';
+const L = __LAYOUT__;
+const IMG_SRC = __IMAGES__;
+const ENGINE_SRC = __ENGINE__;                         // makeSE1 (siren) and makeHH (echo, mono)
+const ENG = new Function(ENGINE_SRC + '\nreturn {makeSE1, makeHH};')();
+
+// ---------- state ----------
+const S = { base: 2, mode: 0, beat: 0, vol: 0.7, trigMode: 1, trigOn: false,
+            s1: false, s2: false, slots: [0, 0, 0, 0, 0, 0, 0, 0], active: -1,
+            rep: 4, dly: 0.58 };
+const KEEP = 'se1-siren-echo-1', KEYS = ['base','mode','beat','vol','trigMode','slots','active','rep','dly'];
+try { const j = JSON.parse(localStorage.getItem(KEEP) || 'null'); if (j) for (const k of KEYS) if (k in j) S[k] = j[k]; } catch (e) {}
+function save() { try { const o = {}; for (const k of KEYS) o[k] = S[k]; localStorage.setItem(KEEP, JSON.stringify(o)); } catch (e) {} }
+const code = () => 1 + S.base + 3 * S.mode + 12 * S.beat;
+
+// ---------- audio: siren -> echo (mono) -> both speakers ----------
+// Echo: HH Echo Unit v9 tape path, MONO, ECO record curve (HYST off, lighter on a phone), mix 5 = full dry + full echo.
+const HH_FIXED = { vol1: 7, vol2: 5, evol: 6, hyst: 0, stereo: 0 };
+let ctx = null, node = null, eng = null, wake = null, sp = null;
+let mic = { on: false, stream: null, src: null, state: 'off', level: 0 };   // state: off | asking | live | blocked | none
+function params() {
+  return { se: { osc_pos: S.base, mode: S.mode, lfo_pos: S.beat, vol: S.vol, s1: S.s1 ? 1 : 0, s2: S.s2 ? 1 : 0, trig: S.trigOn ? 1 : 0 },
+           hh: { rep: S.rep, delay_ms: 60 + 540 * S.dly }, mic: mic.on ? 1 : 0 };
+}
+function apply(e, p) { for (const k in p.se) e.se.set(k, p.se[k]); for (const k in p.hh) e.hh.set(k, p.hh[k]); e.micT = p.mic; }
+function makePair(sr) { const p = { se: ENG.makeSE1(sr), hh: ENG.makeHH(sr), micT: 0, micG: 0, micK: 1 - Math.exp(-1 / (0.01 * sr)) }; for (const k in HH_FIXED) p.hh.set(k, HH_FIXED[k]); return p; }
+function send() {
+  const p = params();
+  if (node && node.port) node.port.postMessage(p); else if (eng) apply(eng, p);
+}
+async function startAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC({ latencyHint: 'interactive' });
+  let ok = false;
+  if (ctx.audioWorklet && window.AudioWorkletNode) {
+    try {
+      const src = ENGINE_SRC + `
+const HH_FIXED = ${JSON.stringify(HH_FIXED)};
+class Rig extends AudioWorkletProcessor {
+  constructor() { super(); this.se = makeSE1(sampleRate); this.hh = makeHH(sampleRate);
+    for (const k in HH_FIXED) this.hh.set(k, HH_FIXED[k]);
+    this.micT = 0; this.micG = 0; this.micK = 1 - Math.exp(-1 / (0.01 * sampleRate)); this.pk = 0; this.n = 0;
+    this.port.onmessage = m => { const p = m.data; for (const k in p.se) this.se.set(k, p.se[k]); for (const k in p.hh) this.hh.set(k, p.hh[k]); this.micT = p.mic; }; }
+  process(inp, out) {
+    const a = out[0][0], b = out[0][1], se = this.se, hh = this.hh, x = inp[0] && inp[0][0], k = this.micK, t = this.micT;
+    let g = this.micG, pk = this.pk;
+    for (let i = 0; i < a.length; i++) {
+      g += (t - g) * k;                                   // 10 ms ramp: the MIC switch never clicks
+      const m = x ? x[i] * g : 0; const am = m < 0 ? -m : m; if (am > pk) pk = am;
+      se.tick(); const y = hh.tick(se.out1 + m); a[i] = y > 1 ? 1 : y < -1 ? -1 : y;
+    }
+    if (b) b.set(a);
+    this.micG = g; this.n += a.length; if (this.n >= 2048) { this.port.postMessage(pk); pk = 0; this.n = 0; } this.pk = pk;
+    return true;
+  }
+}
+registerProcessor('se1-echo', Rig);`;
+      const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+      await ctx.audioWorklet.addModule(url);
+      node = new AudioWorkletNode(ctx, 'se1-echo', { numberOfInputs: 1, outputChannelCount: [2] });
+      node.port.onmessage = m => { mic.level = Math.max(m.data, mic.level * 0.6); };
+      node.connect(ctx.destination);
+      ok = true;
+    } catch (e) { node = null; window.__wkErr = e.name + ': ' + e.message; }
+  }
+  if (!ok) {                                            // older browsers: same engines on the main thread
+    eng = makePair(ctx.sampleRate);
+    sp = ctx.createScriptProcessor(2048, 1, 2);
+    sp.onaudioprocess = ev => {
+      const a = ev.outputBuffer.getChannelData(0), b = ev.outputBuffer.getChannelData(1), x = ev.inputBuffer.getChannelData(0);
+      let pk = 0;
+      for (let i = 0; i < a.length; i++) {
+        eng.micG += (eng.micT - eng.micG) * eng.micK;
+        const m = x[i] * eng.micG; if (Math.abs(m) > pk) pk = Math.abs(m);
+        eng.se.tick(); const y = eng.hh.tick(eng.se.out1 + m); a[i] = y > 1 ? 1 : y < -1 ? -1 : y;
+      }
+      b.set(a); mic.level = Math.max(pk, mic.level * 0.6);
+    };
+    sp.connect(ctx.destination); node = null;
+  }
+  send();
+  await ctx.resume();
+}
+async function keepAwake(on) {
+  try {
+    if (on && !wake && navigator.wakeLock) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    if (!on && wake) { await wake.release(); wake = null; }
+  } catch (e) { wake = null; }
+}
+// MIC: the phone's microphone into the echo, beside the siren. Voice processing off so it sounds like a mic, not a phone call.
+async function micOn() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { mic.state = 'none'; dirty = true; return; }
+  mic.state = 'asking'; dirty = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    mic.stream = stream; mic.src = ctx.createMediaStreamSource(stream);
+    mic.src.connect(node || sp);
+    mic.on = true; mic.state = 'live';
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
+    await ctx.resume();
+  } catch (e) { mic.on = false; mic.state = 'blocked'; window.__micErr = e.name + ': ' + e.message; }
+  send(); dirty = true;
+}
+function micOff() {
+  mic.on = false; mic.state = 'off'; send(); dirty = true;
+  const s = mic.stream, src = mic.src; mic.stream = null; mic.src = null;
+  setTimeout(() => {                                    // after the 10 ms fade, let go of the mic (the phone's mic light goes out)
+    try { if (src) src.disconnect(); } catch (e) {}
+    if (s) s.getTracks().forEach(tr => tr.stop());
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  }, 60);
+}
+function micToggle() { if (mic.state === 'asking') return; if (mic.on) micOff(); else micOn(); }
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden && ctx) { ctx.resume(); keepAwake(true); } });
+
+document.getElementById('power').addEventListener('click', async () => {
+  const err = document.getElementById('err');
+  try { await startAudio(); keepAwake(true); document.getElementById('start').hidden = true; }
+  catch (e) { err.hidden = false; err.textContent = 'This browser could not start audio. Try Chrome or Safari.'; }
+});
+
+// ---------- drawing ----------
+// One offscreen sheet in pt: the siren unit (282 x 169), its strip (60), a gap, then the echo unit (282 x 140).
+const K = 3;                                            // offscreen px per pt
+const F = 282 / 2619;                                   // pt per px of the echo unit artwork
+const HY = 237, HH_H = 1300 * F;                        // echo unit top and height in pt
+const MY = HY + HH_H + 6, MH = 34;                    // MIC bar under the echo unit
+const DW = 282, DH = MY + MH;
+const MIC = { bar: [1, MY, 280, MH], box: [7, MY + 5, 268, 24], lamp: [16, MY + 9.5, 15, 15] };
+const SIREN_H = 229;
+const STRIP = { tmode: [7, 180, 88, 44], slots: [103, 184, 168, 24], mom: [22.5, 185.5, 15, 15], tog: [64.5, 185.5, 15, 15] };
+const HH = {                                            // echo unit, from hh_mini_layout.json (art px -> pt)
+  knobC: [947.4 * F, HY + 506.1 * F], knobBox: [811, 370, 274, 274],
+  knobHit: [(947.4 - 330) * F, HY + (506.1 - 330) * F, 660 * F, 640 * F],
+  capBox: [1231, 862, 170, 247], capCentre: 1310, travel: [630.5, 1989.5],
+  sliderHit: [470 * F, HY + 800 * F, 1680 * F, 360 * F],
+};
+const dev = document.createElement('canvas'); dev.width = DW * K; dev.height = Math.ceil(DH * K);
+const d = dev.getContext('2d');
+if (!d.roundRect) d.roundRect = function (x, y, w, h) { this.rect(x, y, w, h); };   // older Safari
+const IMG = {};
+let dirty = true;
+Object.keys(IMG_SRC).forEach(n => { const im = new Image(); im.onload = () => { dirty = true; }; im.src = IMG_SRC[n]; IMG[n] = im; });
+const ready = n => IMG[n].complete && IMG[n].naturalWidth > 0;
+const pic = (n, r) => { if (ready(n)) d.drawImage(IMG[n], r[0] * K, r[1] * K, r[2] * K, r[3] * K); };
+function pointer(r, deg, a) {
+  const R = r[2] / 2, cx = r[0] + R, cy = r[1] + R, t = deg * Math.PI / 180, s = Math.sin(t), c = -Math.cos(t);
+  d.strokeStyle = 'rgba(245,245,237,0.97)'; d.lineCap = 'round'; d.lineWidth = Math.max(1.2, a[2] * R) * K;
+  d.beginPath(); d.moveTo((cx + a[0] * R * s) * K, (cy + a[0] * R * c) * K); d.lineTo((cx + a[1] * R * s) * K, (cy + a[1] * R * c) * K); d.stroke();
+}
+function slots() {
+  const [x0, y0, w, h] = STRIP.slots, cw = w / 8, cur = code();
+  d.font = `bold ${10 * K}px Arial, Helvetica, sans-serif`; d.textAlign = 'center'; d.textBaseline = 'middle';
+  for (let i = 0; i < 8; i++) {
+    const full = S.slots[i] > 0, on = i === S.active && full, edited = on && S.slots[i] !== cur;
+    const x = (x0 + i * cw + 1.5) * K, y = (y0 + 2) * K, bw = (cw - 3) * K, bh = (h - 4) * K, r = 2.5 * K;
+    d.fillStyle = on && !edited ? '#ffd961' : full ? '#43423e' : '#141516';
+    d.beginPath(); d.roundRect(x, y, bw, bh, r); d.fill();
+    if (edited) { d.strokeStyle = '#ffd961'; d.lineWidth = 1.5 * K; d.beginPath(); d.roundRect(x + 0.75 * K, y + 0.75 * K, bw - 1.5 * K, bh - 1.5 * K, r); d.stroke(); }
+    d.fillStyle = on && !edited ? '#141516' : edited ? '#ffd961' : full ? '#eeeae0' : '#857f78';
+    d.fillText(String(i + 1), x + bw / 2, y + bh / 2 + 0.3 * K);
+  }
+}
+function drawEcho() {
+  pic('hhPlate', [0, HY, 282, HH_H]);
+  // ECHO REPEAT: the cap is drawn pointing at 5; 0 to 10 runs -150 to +150 degrees
+  if (ready('hhKnob')) {
+    const [bx, by, bw, bh] = HH.knobBox, cx = HH.knobC[0] * K, cy = HH.knobC[1] * K;
+    d.save(); d.translate(cx, cy); d.rotate((-150 + 30 * S.rep) * Math.PI / 180);
+    d.drawImage(IMG.hhKnob, (bx - 947.4) * F * K, (by - 506.1) * F * K, bw * F * K, bh * F * K);
+    d.restore();
+  }
+  // ECHO DELAY cap
+  const [x0, x1] = HH.travel, dx = x0 + (x1 - x0) * S.dly - HH.capCentre, [bx, by, bw, bh] = HH.capBox;
+  pic('hhCap', [(bx + dx) * F, HY + by * F, bw * F, bh * F]);
+}
+function drawMic() {
+  const [x, y, w, h] = MIC.bar, [bx, by, bw, bh] = MIC.box;
+  d.fillStyle = '#31312f'; d.beginPath(); d.roundRect(x * K, y * K, w * K, h * K, 4 * K); d.fill();
+  d.strokeStyle = '#9f916f'; d.lineWidth = 1 * K; d.beginPath(); d.roundRect(bx * K, by * K, bw * K, bh * K, 2.5 * K); d.stroke();
+  const [lx, ly, lw] = MIC.lamp;
+  if (mic.on) pic('lamp', MIC.lamp);
+  else { d.fillStyle = '#1b1b19'; d.beginPath(); d.arc((lx + lw / 2) * K, (ly + lw / 2) * K, 4.6 * K, 0, 7); d.fill();
+         d.strokeStyle = '#5c5a50'; d.lineWidth = 0.8 * K; d.stroke(); }
+  d.textBaseline = 'middle'; d.textAlign = 'left';
+  d.font = `700 ${11 * K}px "Barlow Condensed", "Arial Narrow", Arial, sans-serif`;
+  d.fillStyle = '#c9c3a6'; d.fillText('MIC INTO ECHO', 38 * K, (by + bh / 2 + 0.4) * K);
+  // right: a level meter while live, otherwise what to do
+  const msg = { off: 'TAP TO SWITCH ON', asking: 'ALLOW THE MIC…', blocked: 'MIC BLOCKED', none: 'NO MIC HERE' }[mic.state];
+  if (mic.state === 'live') {
+    const n = 12, mx = 150, mw = 116, lv = Math.min(1, Math.sqrt(mic.level) * 1.3);
+    for (let i = 0; i < n; i++) {
+      const lit = i < Math.round(lv * n), hot = i >= n - 2;
+      d.fillStyle = lit ? (hot ? '#e0533c' : '#ffd961') : '#1b1b19';
+      d.fillRect((mx + i * (mw / n) + 0.8) * K, (by + 7) * K, (mw / n - 1.6) * K, 10 * K);
+    }
+  } else {
+    d.textAlign = 'right'; d.font = `700 ${9.5 * K}px "Barlow Condensed", "Arial Narrow", Arial, sans-serif`;
+    d.fillStyle = mic.state === 'blocked' || mic.state === 'none' ? '#ffd961' : '#857f78';
+    d.fillText(msg, (bx + bw - 8) * K, (by + bh / 2 + 0.4) * K);
+  }
+}
+function drawDevice() {
+  d.clearRect(0, 0, dev.width, dev.height);
+  pic('panel', [0, 0, 500, 169]);                       // the side panel half falls outside the sheet
+  pic('strip', [0, 169, 282, 60]);
+  pointer(L.basePtr, L.angles.base[S.base], L.facePtr);
+  pointer(L.modePtr, L.angles.mode[S.mode], L.facePtr);
+  pointer(L.beatPtr, L.angles.beat[S.beat], L.facePtr);
+  pointer(L.volPtr, -150 + 300 * S.vol, L.volArgs);
+  pic(S.s1 ? 'btnOn' : 'btnOff', L.signal);
+  pic(S.s2 ? 'btnOn' : 'btnOff', L.siren);
+  pic(S.trigOn ? 'togOn' : 'togOff', L.trig);
+  pic('lamp', S.trigMode ? STRIP.tog : STRIP.mom);
+  slots();
+  drawEcho();
+  drawMic();
+}
+
+// ---------- screen layout: portrait stacks the sheet, landscape puts the echo beside the siren ----------
+const view = document.getElementById('view'), v = view.getContext('2d');
+let regions = [];                                       // {sy, sh: sheet rows; dx, dy, s: where they land on screen}
+function layout() {
+  const dpr = window.devicePixelRatio || 1, W = view.clientWidth, H = view.clientHeight;
+  view.width = Math.round(W * dpr); view.height = Math.round(H * dpr);
+  v.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const gap = 12;
+  const sP = Math.min(W / DW, H / DH);                  // stacked
+  const sL = Math.min(W / (2 * DW + gap), H / SIREN_H); // side by side
+  if (sL > sP * 1.05) {
+    const s = sL, x = (W - (2 * DW + gap) * s) / 2, y = (H - SIREN_H * s) / 2;
+    regions = [{ sy: 0, sh: SIREN_H, s, dx: x, dy: y },
+               { sy: HY, sh: DH - HY, s, dx: x + (DW + gap) * s, dy: y + (SIREN_H - (DH - HY)) / 2 * s }];
+  } else {
+    const s = sP, x = (W - DW * s) / 2, y = (H - DH * s) / 2;
+    regions = [{ sy: 0, sh: DH, s, dx: x, dy: y }];
+  }
+  dirty = true;
+}
+function paint() {
+  v.clearRect(0, 0, view.clientWidth, view.clientHeight);
+  for (const g of regions) v.drawImage(dev, 0, g.sy * K, DW * K, g.sh * K, g.dx, g.dy, DW * g.s, g.sh * g.s);
+}
+function frame() {
+  if (mic.state === 'live') { mic.level *= 0.92; dirty = true; }
+  if (dirty) { drawDevice(); paint(); dirty = false; }
+  requestAnimationFrame(frame);
+}
+window.addEventListener('resize', layout);
+layout(); requestAnimationFrame(frame);
+
+// ---------- touch ----------
+const toPt = (x, y) => {
+  for (const g of regions) {
+    const px = (x - g.dx) / g.s, py = g.sy + (y - g.dy) / g.s;
+    if (px >= -8 && px <= DW + 8 && py >= g.sy - 8 && py <= g.sy + g.sh + 8) return { x: px, y: py, s: g.s };
+  }
+  return null;
+};
+const inside = (r, p, pad = 0) => p.x >= r[0] - pad && p.x <= r[0] + r[2] + pad && p.y >= r[1] - pad && p.y <= r[1] + r[3] + pad;
+const col = (r, n, x) => Math.max(0, Math.min(n - 1, Math.floor((x - r[0]) / (r[2] / n))));
+const active = new Map();                               // pointerId -> gesture
+function change() { send(); save(); dirty = true; }
+const dlyAt = p => Math.max(0, Math.min(1, (p.x / F - HH.travel[0]) / (HH.travel[1] - HH.travel[0])));
+
+function recall(n) {
+  S.active = n; const c = S.slots[n];
+  if (c > 0) { const k = c - 1; S.base = k % 3; S.mode = Math.floor(k / 3) % 4; S.beat = Math.floor(k / 12); }
+  change();
+}
+function store(n) { S.slots[n] = code(); S.active = n; if (navigator.vibrate) navigator.vibrate(30); change(); }
+function setTrig(on) { S.trigOn = on; change(); }
+
+view.addEventListener('pointerdown', ev => {
+  const p = toPt(ev.offsetX, ev.offsetY); if (!p) return;
+  ev.preventDefault(); view.setPointerCapture(ev.pointerId);
+  let g = null;
+  const tab = (key, r, n) => { S[key] = col(r, n, p.x); change(); return { kind: 'tab', key, r, n }; };
+  const knob = (get, put, range, travel) => ({ kind: 'knob', x0: ev.offsetX, y0: ev.offsetY, v0: get(), get, put, range, travel });
+  if (inside(MIC.bar, p, 3)) micToggle();
+  else if (p.y >= HY - 4) {                             // echo unit
+    if (inside(HH.sliderHit, p)) {
+      const [x0, x1] = HH.travel, capX = (x0 + (x1 - x0) * S.dly) * F;
+      if (Math.abs(p.x - capX) > 9) { S.dly = dlyAt(p); change(); }   // tap the track: the head jumps there
+      g = { kind: 'slide', off: p.x - (x0 + (x1 - x0) * S.dly) * F };
+    }
+    else if (inside(HH.knobHit, p)) g = knob(() => S.rep, x => S.rep = x, [0, 10], 240);
+  }
+  else if (inside(L.baseTabs, p)) g = tab('base', L.baseTabs, 3);
+  else if (inside(L.modeTabs, p)) g = tab('mode', L.modeTabs, 4);
+  else if (inside(L.beatTabs, p)) g = tab('beat', L.beatTabs, 4);
+  else if (inside(L.signal, p, 6)) { S.s1 = true; change(); g = { kind: 'hold', key: 's1' }; }
+  else if (inside(L.siren, p, 6)) { S.s2 = true; change(); g = { kind: 'hold', key: 's2' }; }
+  else if (inside(L.trig, p, 6)) {
+    if (S.trigMode) setTrig(!S.trigOn); else { setTrig(true); g = { kind: 'mom' }; }
+  }
+  else if (inside(L.volKnob, p, 4)) g = knob(() => S.vol, x => S.vol = x, [0, 1], 220);
+  else if (inside(STRIP.tmode, p)) { S.trigMode = p.x < STRIP.tmode[0] + STRIP.tmode[2] / 2 ? 0 : 1; if (S.trigOn && !S.trigMode) setTrig(false); change(); }
+  else if (inside(STRIP.slots, p, 3)) {
+    const n = col(STRIP.slots, 8, p.x);
+    g = { kind: 'slot', n, timer: setTimeout(() => { store(n); g.done = true; }, 550) };
+  }
+  if (g) active.set(ev.pointerId, g);
+});
+view.addEventListener('pointermove', ev => {
+  const g = active.get(ev.pointerId); if (!g) return;
+  if (g.kind === 'tab') { const p = toPt(ev.offsetX, ev.offsetY); if (p) { const n = col(g.r, g.n, p.x); if (n !== S[g.key]) { S[g.key] = n; change(); } } }
+  else if (g.kind === 'knob') {                         // up or right turns it up
+    const [lo, hi] = g.range, moved = (g.y0 - ev.offsetY) + (ev.offsetX - g.x0);
+    const x = Math.max(lo, Math.min(hi, g.v0 + moved / g.travel * (hi - lo)));
+    if (x !== g.get()) { g.put(x); change(); }
+  }
+  else if (g.kind === 'slide') {
+    const p = toPt(ev.offsetX, ev.offsetY) || { x: (ev.offsetX - regions[regions.length - 1].dx) / regions[regions.length - 1].s };
+    const x = dlyAt({ x: p.x - g.off }); if (x !== S.dly) { S.dly = x; change(); }
+  }
+});
+function end(ev) {
+  const g = active.get(ev.pointerId); if (!g) return; active.delete(ev.pointerId);
+  if (g.kind === 'hold') { S[g.key] = false; change(); }
+  else if (g.kind === 'mom') setTrig(false);
+  else if (g.kind === 'slot') { clearTimeout(g.timer); if (!g.done) recall(g.n); }
+}
+view.addEventListener('pointerup', end);
+view.addEventListener('pointercancel', end);
+view.addEventListener('contextmenu', ev => ev.preventDefault());
+</script>
