@@ -161,6 +161,9 @@ async function keepAwake(on) {
 // MIC: the phone's microphone into the echo, beside the siren. Voice processing off so it sounds like a mic, not a phone call.
 async function micOn() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { mic.state = 'none'; mic.why = 'NO MIC IN THIS BROWSER'; dirty = true; return; }
+  if (mic.stream && mic.stream.getAudioTracks().some(tr => tr.readyState === 'live')) {   // already open: just fade it in
+    mic.on = true; mic.state = 'live'; send(); dirty = true; return;
+  }
   mic.state = 'asking'; dirty = true;
   // iPhone: a 'playback' audio session can refuse capture, so switch to play-and-record before asking
   try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
@@ -192,18 +195,18 @@ async function micOn() {
   }
   send(); dirty = true;
 }
-function micOff() {
+function micOff() {                                   // fade out only; the mic stays open so switching back on is seamless
   mic.on = false; mic.state = 'off'; send(); dirty = true;
+}
+function micRelease() {                               // let go of the mic completely (page hidden while the mic is off)
   const s = mic.stream, src = mic.src; mic.stream = null; mic.src = null;
-  setTimeout(() => {                                    // after the 10 ms fade, let go of the mic (the phone's mic light goes out)
-    try { if (src) src.disconnect(); } catch (e) {}
-    if (s) s.getTracks().forEach(tr => tr.stop());
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
-  }, 60);
+  try { if (src) src.disconnect(); } catch (e) {}
+  if (s) s.getTracks().forEach(tr => tr.stop());
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
 }
 function micToggle() { if (mic.state === 'asking') return; if (mic.on) micOff(); else micOn(); }
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden && ctx) { ctx.resume(); keepAwake(true); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden && !mic.on && mic.stream) micRelease(); if (!document.hidden && ctx) { ctx.resume(); keepAwake(true); } });
 
 document.getElementById('power').addEventListener('click', async () => {
   const err = document.getElementById('err');
