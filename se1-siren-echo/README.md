@@ -4,6 +4,8 @@ A browser dub siren for phones by Kibir La Amlak: the SE-1 Siren running into a 
 
 Open `index.html` in Chrome or Safari and tap **Power up**. It is one self-contained file, so it also works offline.
 
+It plays over other apps: start Spotify, Apple Music or anything else first, then siren on top. On iPhone, switching the mic on hands the audio to recording mode, which pauses other apps; sirens without the mic do not.
+
 ![screenshot](screenshot.png)
 
 ## Controls

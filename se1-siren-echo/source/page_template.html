@@ -62,7 +62,7 @@ h1 { margin: 0; font-size: clamp(2.4rem, 9vw, 3.8rem); line-height: 0.95; letter
       <li>Tap <b>MIC INTO ECHO</b> to put your voice through the echo too. Use headphones, or the speaker will feed back into the mic.</li>
     </ul>
     <button id="power" type="button">Power up</button>
-    <p class="note">Headphones or a speaker recommended. On iPhone, if there is no sound, check the silent switch.</p>
+    <p class="note">Plays over your music: start Spotify or Apple Music first, then siren on top. On iPhone, if there is no sound, check the silent switch.</p>
     <p id="err" hidden></p>
   </div>
 </div>
@@ -99,7 +99,7 @@ function send() {
   if (node && node.port) node.port.postMessage(p); else if (eng) apply(eng, p);
 }
 async function startAudio() {
-  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch (e) {}   // 'ambient' plays over Spotify, Apple Music etc. instead of stopping them
   const AC = window.AudioContext || window.webkitAudioContext;
   ctx = new AC({ latencyHint: 'interactive' });
   let ok = false;
@@ -179,7 +179,7 @@ async function micOn() {
       mic.on = false; mic.state = 'blocked';
       mic.why = { NotAllowedError: 'MIC PERMISSION OFF', SecurityError: 'MIC PERMISSION OFF', NotFoundError: 'NO MIC FOUND',
                   NotReadableError: 'MIC IN USE ELSEWHERE', AbortError: 'MIC IN USE ELSEWHERE' }[e.name] || ('MIC ERROR: ' + e.name).toUpperCase();
-      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e3) {}
+      try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch (e3) {}
       send(); dirty = true; return;
     }
   }
@@ -202,7 +202,7 @@ function micRelease() {                               // let go of the mic compl
   const s = mic.stream, src = mic.src; mic.stream = null; mic.src = null;
   try { if (src) src.disconnect(); } catch (e) {}
   if (s) s.getTracks().forEach(tr => tr.stop());
-  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch (e) {}
 }
 function micToggle() { if (mic.state === 'asking') return; if (mic.on) micOff(); else micOn(); }
 
