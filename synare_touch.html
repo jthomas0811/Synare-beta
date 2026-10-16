@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><title>Synare Touch</title>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"></head><body><title>Synare Touch</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -16,6 +16,7 @@
   color-scheme: dark;
 }
 [hidden] { display: none !important; }
+* { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }  /* no double-tap zoom anywhere */
 html, body { height: 100%; margin: 0; }
 body { background: var(--ground); color: var(--ink); font-family: var(--display); overflow: hidden;
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -24,7 +25,7 @@ body { background: var(--ground); color: var(--ink); font-family: var(--display)
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 header img { height: 22px; width: auto; display: block; }
 header .tag { font: 500 12px var(--mono); letter-spacing: 0.14em; color: var(--dim); text-transform: uppercase; }
-#pad { flex: 1; min-height: 0; width: 100%; display: block; border-radius: 18px; background: var(--head); touch-action: none; }
+#pad { flex: 1; min-height: 0; width: 100%; display: block; border-radius: 18px; background: var(--head); touch-action: none !important; }
 footer { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; font: 400 11px var(--mono); color: var(--dim); }
 footer b { display: block; font: 500 15px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; margin-top: 2px; }
 footer .meter { height: 3px; background: var(--ring); border-radius: 2px; margin-top: 6px; position: relative; overflow: hidden; }
@@ -477,6 +478,11 @@ window.addEventListener('keydown', e => {
 
 // ---------- the pad ----------
 const pad = document.getElementById('pad'), g = pad.getContext('2d');
+// iPhone Safari: fast taps would zoom the page. Swallow the touch gestures so only the pad's own handling runs.
+for (const ev of ['touchstart', 'touchmove', 'touchend']) pad.addEventListener(ev, e => e.preventDefault(), { passive: false });
+for (const ev of ['gesturestart', 'gesturechange', 'dblclick']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+let lastEnd = 0;
+document.addEventListener('touchend', e => { const now = Date.now(); if (now - lastEnd < 350) e.preventDefault(); lastEnd = now; }, { passive: false });
 let W = 0, Hh = 0, dpr = 1;
 function size() { dpr = window.devicePixelRatio || 1; W = pad.clientWidth; Hh = pad.clientHeight; pad.width = Math.round(W * dpr); pad.height = Math.round(Hh * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0); }
 window.addEventListener('resize', size);
