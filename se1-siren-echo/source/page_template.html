@@ -166,16 +166,21 @@ async function micOn() {
     mic.on = true; mic.state = 'live'; send(); dirty = true; return;
   }
   mic.state = 'asking'; dirty = true;
-  // iPhone: a 'playback' audio session can refuse capture, so switch to play-and-record before asking
-  try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (e) {}
-  let stream = null;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-  } catch (e) {
-    window.__micErr = e.name + ': ' + e.message;
-    if (e.name !== 'NotAllowedError' && e.name !== 'SecurityError') {
-      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e2) { e = e2; window.__micErr = e2.name + ': ' + e2.message; }
-    }
+  // iPhone: first let Safari choose the audio mode itself ('auto'), which may keep other apps' music playing.
+  // Only if that fails, force 'play-and-record' (which pauses other apps) and ask again.
+  const sess = ty => { try { if (navigator.audioSession) navigator.audioSession.type = ty; } catch (e) {} };
+  const ask = c => navigator.mediaDevices.getUserMedia(c);
+  const RAW = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } };
+  let stream = null, e = null;
+  sess('auto');
+  try { stream = await ask(RAW); mic.mode = 'auto'; } catch (x) { e = x; }
+  if (!stream && e && e.name !== 'NotAllowedError' && e.name !== 'SecurityError') {
+    sess('play-and-record');
+    try { stream = await ask(RAW); mic.mode = 'play-and-record'; e = null; } catch (x) { e = x; }
+    if (!stream) { try { stream = await ask({ audio: true }); mic.mode = 'play-and-record'; e = null; } catch (x) { e = x; } }
+  }
+  if (e) window.__micErr = e.name + ': ' + e.message;
+  {
     if (!stream) {
       mic.on = false; mic.state = 'blocked';
       mic.why = { NotAllowedError: 'MIC PERMISSION OFF', SecurityError: 'MIC PERMISSION OFF', NotFoundError: 'NO MIC FOUND',
@@ -211,7 +216,7 @@ function micToggle() { if (mic.state === 'asking') return; if (mic.on) micOff();
 // iPhone pauses ('interrupted') or kills the page's audio when you switch apps. Coming back we try to resume;
 // if it is still not running, the next tap anywhere resumes it, and a second tap rebuilds the audio from scratch.
 let resumeTriedAt = 0;
-function setAmbient() { try { if (navigator.audioSession) navigator.audioSession.type = mic.on ? 'play-and-record' : 'ambient'; } catch (e) {} }
+function setAmbient() { try { if (navigator.audioSession) navigator.audioSession.type = mic.on ? (mic.mode || 'auto') : 'ambient'; } catch (e) {} }
 async function rebuildAudio() {
   if (mic.stream) micRelease();
   mic.on = false; mic.state = 'off';
